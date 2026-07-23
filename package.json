@@ -1,0 +1,19 @@
+{
+  "name": "codex-usage-pacer",
+  "version": "0.8.0",
+  "private": true,
+  "description": "Local-only pacing and history overlays for the Codex usage dashboard.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DiegoZC4/codex-usage-pacer.git"
+  },
+  "scripts": {
+    "test": "node --test reset-log-core.test.js",
+    "check": "node --check content.js && node --check reset-log-core.js && node scripts/validate-package.mjs",
+    "package": "npm run check && bash scripts/package-extension.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
