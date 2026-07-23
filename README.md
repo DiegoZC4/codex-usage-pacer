@@ -9,6 +9,10 @@ It is designed for people who want to understand how their displayed quota
 changes over time without running a separate server or continuously polling in
 the background.
 
+![Codex Usage Pacer with representative usage data](store/screenshot-1280x800.png)
+
+The screenshot uses representative values and contains no account data.
+
 ## Features
 
 - Adds even-pace targets and time-axis tick marks to visible usage cards.

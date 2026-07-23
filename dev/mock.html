@@ -421,6 +421,39 @@
       white-space: nowrap;
     }
 
+    body.store-capture {
+      width: 1280px;
+      height: 800px;
+      overflow: hidden;
+    }
+
+    body.store-capture .shell {
+      width: 1180px;
+      margin: 0 auto;
+      padding-top: 30px;
+    }
+
+    body.store-capture .workspace {
+      display: block;
+    }
+
+    body.store-capture .lab-panel,
+    body.store-capture .model-grid {
+      display: none;
+    }
+
+    body.store-capture article {
+      min-height: 184px;
+    }
+
+    body.store-capture .cards {
+      gap: 20px;
+    }
+
+    body.store-capture .tabs {
+      margin-bottom: 42px;
+    }
+
     @media (max-width: 1120px) {
       .workspace {
         grid-template-columns: 1fr;
@@ -615,6 +648,10 @@
 
   <script>
     (() => {
+      const isStoreCapture =
+        new URLSearchParams(window.location.search).has("store");
+      if (isStoreCapture) document.body.classList.add("store-capture");
+
       const HOUR_MS = 60 * 60 * 1000;
       const DAY_MS = 24 * HOUR_MS;
       const STORAGE_KEY = "codex-usage-pacer-style-lab";
@@ -818,7 +855,7 @@
         });
       });
 
-      const storedValues = loadStoredValues();
+      const storedValues = isStoreCapture ? {} : loadStoredValues();
       restoreSlider(tickFontSize, storedValues.tickFontSize);
       restoreSlider(axisInsetPx, storedValues.axisInsetPx);
       const migratedTickLength =

@@ -11,6 +11,10 @@ dashboard.
 
 **Language:** English
 
+**Store icon:** `icons/icon-128.png`
+
+**Screenshot:** `store/screenshot-1280x800.png` (representative data)
+
 ## Detailed description
 
 Codex Usage Pacer adds an evidence-focused overlay to the Codex usage
