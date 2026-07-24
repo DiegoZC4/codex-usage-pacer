@@ -21,10 +21,12 @@ Codex Usage Pacer adds an evidence-focused overlay to the Codex usage
 dashboard. It shows even-pace targets, clearer time axes, a daily usage
 calendar, reset-time changes, and observation coverage.
 
-The extension records only what the signed-in dashboard visibly reports. It
-checks after the page loads and when the tab or window returns to focus. It
-does not poll in the background, infer hidden capacity, or require a companion
-server.
+The extension reads and locally stores only what the signed-in dashboard
+visibly reports: quota labels, remaining percentages, reset dates and times,
+reset-credit counts and visible expiration text, parser status, and the local
+time of each check. It checks after the page loads and when the tab or window
+returns to focus. It does not poll in the background, infer hidden capacity, or
+require a companion server.
 
 All observations stay in Chrome's local extension storage. There are no ads,
 analytics SDKs, remote code, or extension-initiated network requests.

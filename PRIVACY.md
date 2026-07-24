@@ -42,6 +42,14 @@ GitHub, or any other third party. It does not use remote code or make its own
 network requests. The underlying Codex dashboard continues to communicate with
 OpenAI as it normally would.
 
+## Chrome Web Store Limited Use
+
+Codex Usage Pacer's use of information received through Chrome adheres to the
+Chrome Web Store User Data Policy, including the Limited Use requirements. The
+extension uses the dashboard observations only to provide and improve its
+user-facing pacing and local-history features. It does not transfer the data,
+use it for advertising or creditworthiness, or permit humans to read it.
+
 ## Permissions
 
 - `storage`: saves the local histories and focus-refresh marker described above.
