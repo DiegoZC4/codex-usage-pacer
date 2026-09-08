@@ -5,6 +5,8 @@
   const CARD_GROUP_CLASS = "codex-usage-pacer-card-group";
   const OLD_SUMMARY_CLASS = "codex-usage-pacer-summary";
   const TARGET_CLASS = "codex-usage-pacer-target";
+  const FORECAST_LINK_CLASS = "codex-usage-pacer-forecast-link";
+  const FORECAST_MARKER_CLASS = "codex-usage-pacer-forecast-marker";
   const CREDIT_NOTE_CLASS = "codex-usage-pacer-credit-note";
   const PROGRESS_CLASS = "codex-usage-pacer-square-progress";
   const RESET_CALENDAR_ID = "codex-usage-pacer-reset-calendar";
@@ -20,6 +22,7 @@
   const EVIDENCE_CAPTURE_FALLBACK_MS = 5 * 1000;
   const RESET_LOG_STORAGE_KEY = "codexUsagePacerResetLogV1";
   const FOCUS_RELOAD_MARKER_KEY = "codexUsagePacerFocusReloadPending";
+  const FORECAST_MESSAGE = "codexUsagePacer:getResetForecast";
   const RESET_LOG_GREEN_MINUTES = 10_000;
   const HOUR_MS = 60 * 60 * 1000;
   const DAY_MS = 24 * HOUR_MS;
@@ -27,6 +30,7 @@
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const resetLogCore = globalThis.CodexUsageResetLogCore || null;
+  const resetForecastCore = globalThis.CodexUsageForecastCore || null;
   let sawAway = document.hidden;
   let lastAwayAt = document.hidden ? Date.now() : 0;
   let resetLogState = resetLogCore?.normalizeState(null) || null;
@@ -46,6 +50,9 @@
   let destroyed = false;
   let invalidationReloadScheduled = false;
   let persistQueued = false;
+  let monitorForecastSnapshot = null;
+  let monitorForecastStale = false;
+  let monitorForecastRequested = false;
 
   window[INSTANCE_KEY]?.destroy?.();
 
@@ -121,6 +128,9 @@
       .${CARD_CLASS} {
         width: 100% !important;
         max-width: none !important;
+      }
+      .${CARD_CLASS} div:has(> .${TARGET_CLASS}) {
+        flex-wrap: wrap;
       }
       .${PROGRESS_CLASS},
       .${PROGRESS_CLASS} > div:not(.${OVERLAY_CLASS}) {
@@ -201,12 +211,43 @@
         filter: none;
         transform: translateX(calc(-1 * var(--codex-usage-pacer-marker-half-width)));
       }
+      .${FORECAST_MARKER_CLASS} {
+        position: absolute;
+        top: var(--codex-usage-pacer-marker-space);
+        width: 2px;
+        height: var(--codex-usage-pacer-rail-height);
+        background: #38bdf8;
+        transform: translateX(-1px);
+        cursor: pointer;
+        pointer-events: auto;
+        text-decoration: none;
+      }
+      .${FORECAST_MARKER_CLASS}[data-range="true"] {
+        min-width: 2px;
+        box-sizing: border-box;
+        border-inline: 1px solid #38bdf8;
+        background: rgba(56, 189, 248, 0.3);
+      }
       .${TARGET_CLASS} {
         color: rgba(255, 255, 255, 0.66);
         font-size: 16px;
         line-height: 22px;
         font-weight: 700;
-        white-space: nowrap;
+        white-space: normal;
+      }
+      .${TARGET_CLASS}[${TOOLTIP_ATTR}] {
+        cursor: help;
+      }
+      .${FORECAST_LINK_CLASS} {
+        margin-left: 7px;
+        color: #7dd3fc;
+        font-size: 15px;
+        line-height: 22px;
+        font-weight: 700;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-decoration: underline;
+        text-underline-offset: 2px;
       }
       .${CREDIT_NOTE_CLASS} {
         margin-top: 8px;
@@ -546,6 +587,12 @@
         .${TARGET_CLASS} {
           color: rgba(15, 23, 42, 0.62);
         }
+        .${FORECAST_LINK_CLASS} {
+          color: #0369a1;
+        }
+        .${FORECAST_MARKER_CLASS} {
+          background: #0284c7;
+        }
         .${CREDIT_NOTE_CLASS} {
           color: rgba(15, 23, 42, 0.68);
         }
@@ -729,6 +776,7 @@
       node.classList?.contains(OVERLAY_CLASS) ||
       node.classList?.contains(OLD_SUMMARY_CLASS) ||
       node.classList?.contains(TARGET_CLASS) ||
+      node.classList?.contains(FORECAST_LINK_CLASS) ||
       node.classList?.contains(CREDIT_NOTE_CLASS) ||
       node.id === RESET_CALENDAR_ID
     ) {
@@ -736,13 +784,17 @@
     }
     return Boolean(
       node.closest?.(
-        `[${MANAGED_ATTR}], .${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${CREDIT_NOTE_CLASS}, #${RESET_CALENDAR_ID}`
+        `[${MANAGED_ATTR}], .${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${FORECAST_LINK_CLASS}, .${CREDIT_NOTE_CLASS}, #${RESET_CALENDAR_ID}`
       )
     );
   }
 
   function cleanupUsageCard(card) {
-    card.querySelectorAll(`.${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}`).forEach((node) => node.remove());
+    card
+      .querySelectorAll(
+        `.${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${FORECAST_LINK_CLASS}`
+      )
+      .forEach((node) => node.remove());
     card.querySelectorAll(`.${PROGRESS_CLASS}, [${PROGRESS_ATTR}]`).forEach((node) => {
       node.classList.remove(PROGRESS_CLASS);
       node.removeAttribute(PROGRESS_ATTR);
@@ -758,7 +810,7 @@
     const copy = card.cloneNode(true);
     copy
       .querySelectorAll(
-        `[${MANAGED_ATTR}], .${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${CREDIT_NOTE_CLASS}`
+        `[${MANAGED_ATTR}], .${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${FORECAST_LINK_CLASS}, .${CREDIT_NOTE_CLASS}`
       )
       .forEach((node) => node.remove());
     return (copy.textContent || "").replace(/\s+/g, " ").trim();
@@ -1922,6 +1974,103 @@
     return fragment;
   }
 
+  function formatExpectedReset(timestamp) {
+    const date = new Date(timestamp);
+    return `${WEEKDAYS[date.getDay()]} ${formatClock(date)}`;
+  }
+
+  function forecastTooltip(forecast) {
+    const snapshot = forecast.snapshot;
+    const announcement = snapshot.announcement;
+    const calibration = snapshot.calibrationState
+      ? `${snapshot.calibrationState}${
+          snapshot.calibrationSampleSize !== null
+            ? `, n=${snapshot.calibrationSampleSize}`
+            : ""
+        }`
+      : "calibration not reported";
+    return [
+      ...(announcement ? [
+        `Announced: ${formatAnnouncementTime(announcement)}`,
+        `Source wording: "${announcement.phrase}"`,
+        `Post published: ${formatLocalDateTime(announcement.publishedAtMs)}`,
+        "Today/tomorrow is relative to the post's date in its stated timezone, not this page refresh.",
+        ...(announcement.timeZoneAmbiguous ? [
+          "Timezone ambiguity: PST/PDT is sometimes used to mean local Pacific time. The range includes both the literal abbreviation and America/Los_Angeles, including daylight saving time.",
+        ] : []),
+        ...(announcement.endAtMs <= Date.now() ? ["Announced time has passed; a completed reset is not confirmed by this forecast."] : []),
+      ] : ["No source-supported reset time. A 24h/48h probability does not locate a particular hour, so no exact-time marker is drawn."]),
+      `Probability windows start: ${formatLocalDateTime(snapshot.asOfMs)}`,
+      `P(reset within 24h): ${forecast.probabilityFirst24HoursPercent}%`,
+      `P(reset during 24-48h): ${forecast.probabilityHours24To48Percent}%`,
+      `P(reset within 48h): ${forecast.probabilityWithin48HoursPercent}% (marker shown at ${Math.round(
+        forecast.minConfidence * 100
+      )}% or higher)`,
+      `48h window ends: ${formatLocalDateTime(forecast.windowEndAtMs)}`,
+      "The percentage is the independent monitor's estimate for the entire window, not confidence in the announced hour. Approximate times are not deadlines; no probability-weighted timestamp or blending is used.",
+      `Official weekly reset: ${formatLocalDateTime(forecast.defaultResetAtMs)}`,
+      "The pacing target uses only the official reset; this forecast does not affect it.",
+      `Monitor calibration: ${calibration}${
+        monitorForecastStale ? ", cached" : ""
+      }`,
+      `Fetched: ${formatLocalDateTime(snapshot.fetchedAtMs)}`,
+    ].join("\n");
+  }
+
+  function formatAnnouncementTime(announcement) {
+    const start = new Date(announcement.startAtMs);
+    const end = new Date(announcement.endAtMs);
+    const rangeEnd = announcement.endAtMs === announcement.startAtMs ? "" :
+      `-${start.toDateString() === end.toDateString() ? formatClock(end) : formatExpectedReset(announcement.endAtMs)}`;
+    return `${WEEKDAYS[start.getDay()]} ${announcement.approximate ? "~" : ""}${formatClock(start)}${rangeEnd}`;
+  }
+
+  function buildForecastSourceLink(forecast, showAnnouncement = false) {
+    const announcement = showAnnouncement ? forecast.snapshot.announcement : null;
+    const link = document.createElement("a");
+    link.className = FORECAST_LINK_CLASS;
+    link.setAttribute(MANAGED_ATTR, "true");
+    link.href = announcement?.sourceUrl || forecast.snapshot.sourceUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = announcement
+      ? `announced ${formatAnnouncementTime(announcement)}${announcement.endAtMs <= Date.now() ? " (time passed)" : ""}`
+      : `${forecast.snapshot.announcement ? "" : "forecast "}${forecast.probabilityWithin48HoursPercent}% within 48h`;
+    setInstantTooltip(link, forecastTooltip(forecast));
+    return link;
+  }
+
+  async function requestResetForecast() {
+    if (monitorForecastRequested || !resetForecastCore || destroyed) return;
+    monitorForecastRequested = true;
+    if (!hasExtensionContext()) {
+      retireInvalidatedInstance();
+      return;
+    }
+
+    try {
+      const response = await globalThis.chrome.runtime.sendMessage({ type: FORECAST_MESSAGE });
+      if (destroyed) return;
+      let snapshot = resetForecastCore.normalizeSnapshot(response?.snapshot);
+      if (!response?.ok || !snapshot) return;
+      if (typeof response.sourceHtml === "string") {
+        const sourceDocument = new DOMParser().parseFromString(response.sourceHtml, "text/html");
+        snapshot = resetForecastCore.enrichMonitorSnapshot(snapshot, sourceDocument);
+      }
+      if (!snapshot) return;
+      monitorForecastSnapshot = snapshot;
+      monitorForecastStale = Boolean(response.stale);
+      scheduleAnnotate();
+      if (!response.stale) {
+        await globalThis.chrome.storage.local.set({ [resetForecastCore.CACHE_KEY]: snapshot });
+      }
+    } catch (error) {
+      if (!hasExtensionContext() || isExtensionContextInvalidatedError(error)) {
+        retireInvalidatedInstance();
+      }
+    }
+  }
+
   function annotateCard(card, now) {
     cleanupUsageCard(card);
 
@@ -1954,8 +2103,16 @@
     }
 
     const startMs = isFullWindow ? now.getTime() : resetDate.getTime() - windowMs;
-    const elapsed = clamp((now.getTime() - startMs) / windowMs, 0, 1);
-    const idealRemaining = clamp((1 - elapsed) * 100, 0, 100);
+    const axisElapsed = clamp((now.getTime() - startMs) / windowMs, 0, 1);
+    const forecast =
+      isWeekly && !isFullWindow && monitorForecastSnapshot
+        ? resetForecastCore?.selectHighConfidenceForecast(
+            resetDate.getTime(),
+            monitorForecastSnapshot,
+            now.getTime()
+          )
+        : null;
+    const idealRemaining = clamp((1 - axisElapsed) * 100, 0, 100);
 
     progressBar.classList.add(PROGRESS_CLASS);
     progressBar.setAttribute(PROGRESS_ATTR, "true");
@@ -1967,9 +2124,30 @@
 
     const marker = document.createElement("div");
     marker.className = "codex-usage-pacer-marker";
-    marker.style.left = `${elapsed * 100}%`;
+    marker.style.left = `${axisElapsed * 100}%`;
     setInstantTooltip(marker, `Now: even pace ${idealRemaining.toFixed(0)}% remaining`);
     overlay.appendChild(marker);
+    if (forecast?.forecastAtMs !== null && forecast?.forecastAtMs !== undefined) {
+      const forecastMarker = document.createElement("a");
+      forecastMarker.className = FORECAST_MARKER_CLASS;
+      forecastMarker.setAttribute(MANAGED_ATTR, "true");
+      forecastMarker.href = forecast.snapshot.announcement.sourceUrl;
+      forecastMarker.target = "_blank";
+      forecastMarker.rel = "noopener noreferrer";
+      forecastMarker.style.left = `${
+        ((forecast.forecastAtMs - startMs) / windowMs) * 100
+      }%`;
+      if (forecast.forecastEndAtMs > forecast.forecastAtMs) {
+        forecastMarker.dataset.range = "true";
+        forecastMarker.style.width = `${((forecast.forecastEndAtMs - forecast.forecastAtMs) / windowMs) * 100}%`;
+      }
+      forecastMarker.setAttribute(
+        "aria-label",
+        `Announced reset ${formatAnnouncementTime(forecast.snapshot.announcement)}`
+      );
+      setInstantTooltip(forecastMarker, forecastTooltip(forecast));
+      overlay.appendChild(forecastMarker);
+    }
     progressBar.appendChild(overlay);
 
     const target = document.createElement("span");
@@ -1977,6 +2155,8 @@
     target.setAttribute(MANAGED_ATTR, "true");
     target.textContent = `(target ${idealRemaining.toFixed(0)}%)`;
     remainingRow.appendChild(target);
+    if (forecast?.snapshot.announcement) remainingRow.appendChild(buildForecastSourceLink(forecast, true));
+    if (forecast) remainingRow.appendChild(buildForecastSourceLink(forecast));
 
     if (resetRow) {
       resetRow.querySelectorAll(`.${OLD_SUMMARY_CLASS}`).forEach((node) => node.remove());
@@ -2129,5 +2309,6 @@
     maybeCaptureEvidenceObservation(new Date(), true);
   }, EVIDENCE_CAPTURE_FALLBACK_MS);
   loadResetLogState();
+  requestResetForecast();
   annotate();
 })();

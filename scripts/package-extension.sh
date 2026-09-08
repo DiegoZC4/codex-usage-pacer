@@ -11,7 +11,9 @@ rm -f "$ARCHIVE"
 cd "$ROOT"
 zip -X -q "$ARCHIVE" \
   manifest.json \
+  background.js \
   content.js \
+  forecast-core.js \
   reset-log-core.js \
   icons/icon-16.png \
   icons/icon-32.png \

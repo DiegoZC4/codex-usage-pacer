@@ -13,6 +13,10 @@ const packageJson = JSON.parse(
 const failures = [];
 const requiredFiles = new Set(["manifest.json"]);
 
+if (manifest.background?.service_worker) {
+  requiredFiles.add(manifest.background.service_worker);
+}
+
 for (const script of manifest.content_scripts ?? []) {
   for (const file of script.js ?? []) requiredFiles.add(file);
   for (const file of script.css ?? []) requiredFiles.add(file);
@@ -54,6 +58,11 @@ if (matches.length !== 1 || matches[0] !== expectedMatch) {
 const permissions = manifest.permissions ?? [];
 if (permissions.length !== 1 || permissions[0] !== "storage") {
   failures.push("the only extension permission should be storage");
+}
+
+const hostPermissions = manifest.host_permissions ?? [];
+if (hostPermissions.length !== 1 || hostPermissions[0] !== "https://codexreset.org/*") {
+  failures.push("forecast host access must be limited to https://codexreset.org/*");
 }
 
 if (failures.length > 0) {

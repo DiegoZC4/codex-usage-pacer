@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forecast browser regression test</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: #101010; color: #eee; font: 15px system-ui, sans-serif; }
+  main { width: 600px; max-width: 100%; }
+  article { border: 1px solid #333; border-radius: 8px; background: #222; padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; flex-direction: column; gap: 4px; }
+  header p { margin: 0; color: #aaa; }
+  .remaining { display: flex; align-items: baseline; gap: 4px; }
+  .percent { font-size: 24px; font-weight: 600; }
+  .rail { position: relative; width: 100%; height: 12px; }
+  .rail > div { position: absolute; top: 0; left: 0; height: 100%; }
+  .track { width: 100%; background: #ebebf0; }
+  .fill { width: 78%; background: #22c55e; }
+  #results { white-space: pre-wrap; font: 13px monospace; line-height: 1.5; margin-top: 24px; }
+</style>
+<main>
+  <h2>Balance</h2>
+  <div id="cards">
+    <article>
+      <header><p>Weekly usage limit</p><div class="remaining"><span class="percent">78%</span><span> remaining </span></div></header>
+      <div class="rail"><div class="track"></div><div class="fill"></div></div>
+      <div>Resets Sep 13, 2026 8:46 PM</div>
+    </article>
+  </div>
+  <pre id="results">Running browser regressions...</pre>
+</main>
+<script src="../forecast-core.js"></script>
+<script>
+  const core = CodexUsageForecastCore;
+  const NOW = Date.parse("2026-09-07T23:00:00Z");
+  const POSTED = "2026-09-07T19:24:57Z";
+  const POST = "https://x.com/thsottiaux/status/2097043464538264003";
+  const query = new URLSearchParams(location.search);
+  document.querySelector("main").style.width = `${Math.max(280, Math.min(900, Number(query.get("width")) || 600))}px`;
+  const messages = [];
+  function check(name, condition) {
+    messages.push(`${condition ? "PASS" : "FAIL"} ${name}`);
+    document.querySelector("#results").textContent = messages.join("\n");
+    if (!condition) document.body.dataset.failed = "true";
+  }
+  function post(text, date = POSTED, url = POST) {
+    return `<div data-testid="reset-timeline-item" data-kind="post" data-datetime="${date}" data-source-url="${url}"><article data-testid="x-timeline-post"><div><p>Parent context is not the announcement.</p></div><h3>Upward signal</h3><p>${text}</p></article></div>`;
+  }
+  const base = `<time data-testid="reset-exact-time" datetime="2026-08-31T02:34:27Z"></time>
+    <section data-testid="forecast-panel" data-calibration-state="experimental" data-calibration-sample-size="43">
+    <div data-testid="probability-ring-24h" data-target-value="98"></div>
+    <div data-testid="probability-ring-48h" data-target-value="99"></div></section>
+    <section data-testid="monitor-freshness"><time datetime="2026-09-07T22:59:00Z"></time></section>`;
+  const timingPost = post("Global usage reset. Lands around 6pm PST today.");
+  const html = base + (query.get("mode") === "window" ? "" : timingPost);
+  function parse(source) {
+    return core.enrichMonitorSnapshot(core.parseMonitorHtml(source, NOW), new DOMParser().parseFromString(source, "text/html"));
+  }
+  const parsed = parse(base + timingPost);
+  check("DOM extracts the source post and its explicit clock", parsed.announcement?.sourceUrl === POST && parsed.announcement.startAtMs === Date.parse("2026-09-08T01:00:00Z"));
+  check("window anchored to the monitor's check, not fetch time", parsed.asOfMs === Date.parse("2026-09-07T22:59:00Z"));
+  check("HTML entities are decoded by the real DOM parser", parse(base + post("Global reset. Lands around 6pm&#32;PST today.")).announcement?.startAtMs === parsed.announcement.startAtMs);
+  check("historical announcements are excluded", parse(base + post("Global reset. Lands at 6pm PT tomorrow.", "2026-08-23T06:29:00Z")).announcement === null);
+  check("newer cancellation supersedes old timing", parse(base + timingPost + post("Reset cancelled.", "2026-09-07T22:30:00Z")).announcement === null);
+  check("parent clock does not become the post's clock", parse(base + post("Global reset soon.").replace("Parent context is not the announcement.", "Global reset. Lands at 6pm PT today.")).announcement === null);
+  check("untrusted post URL is excluded", parse(base + post("Global reset. Lands at 6pm PT today.", POSTED, "https://example.com/")).announcement === null);
+  check("only short timing provenance is retained, not full source HTML", !JSON.stringify(parsed).includes("<article") && !JSON.stringify(parsed).includes("Global usage reset."));
+  const RealDate = Date;
+  window.Date = class extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [NOW])); }
+    static now() { return NOW; }
+  };
+  const mockStorage = {};
+  Object.defineProperty(window, "chrome", {configurable: true, value: {
+    runtime: { id: "fixture-only", getManifest: () => ({version: "0.9.2"}),
+      sendMessage: async () => ({ok: true, stale: false, sourceHtml: html, snapshot: core.parseMonitorHtml(html, NOW)}) },
+    storage: {local: {get: async () => ({...mockStorage}), set: async (value) => Object.assign(mockStorage, value)}},
+  }});
+  setTimeout(() => {
+    const card = document.querySelector("#cards article");
+    const links = [...card.querySelectorAll(".codex-usage-pacer-forecast-link")];
+    const marker = card.querySelector(".codex-usage-pacer-forecast-marker");
+    const isWindow = query.get("mode") === "window";
+    check("content script receives and renders the enriched forecast", links.length === (isWindow ? 1 : 2));
+    check("probability links to the monitor", links.some((link) => link.href === core.SOURCE_URL && link.textContent.includes("99% within 48h")));
+    check("no invented Tuesday point time", !links.some((link) => /forecast Tue/.test(link.textContent)));
+    check("marker only for a source-supported time", isWindow ? !marker : marker?.dataset.range === "true" && marker.href === POST);
+    check("structured announcement is cached", Boolean(mockStorage[core.CACHE_KEY]) && (isWindow || mockStorage[core.CACHE_KEY].announcement.sourceUrl === POST));
+    const bounds = card.getBoundingClientRect();
+    check("all labels fit inside the card", links.length > 0 && links.every((link) => { const r = link.getBoundingClientRect(); return r.left >= bounds.left && r.right <= bounds.right && r.bottom <= bounds.bottom; }));
+    const row = card.querySelector(".remaining").getBoundingClientRect();
+    const bar = card.querySelector(".rail").getBoundingClientRect();
+    check("text does not overlap the usage rail", row.bottom <= bar.top);
+    document.body.dataset.complete = "true";
+    document.title = `${document.body.dataset.failed ? "FAIL" : "PASS"}: ${messages.length} forecast browser checks`;
+  }, 1000);
+</script>
+<script src="../content.js"></script>
+</html>

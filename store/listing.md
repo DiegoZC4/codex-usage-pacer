@@ -1,5 +1,8 @@
 # Chrome Web Store Listing
 
+This is reference copy only. Current releases are distributed through GitHub;
+publishing a GitHub release does not submit an extension or update to the Store.
+
 ## Product details
 
 **Name:** Codex Usage Pacer
@@ -19,7 +22,9 @@ dashboard.
 
 Codex Usage Pacer adds an evidence-focused overlay to the Codex usage
 dashboard. It shows even-pace targets, clearer time axes, a daily usage
-calendar, reset-time changes, and observation coverage.
+calendar, reset-time changes, and observation coverage. Separately linked public
+reset forecasts show their probability windows and source announcements without
+changing the official pacing target.
 
 The extension reads and locally stores only what the signed-in dashboard
 visibly reports: quota labels, remaining percentages, reset dates and times,
@@ -29,7 +34,9 @@ returns to focus. It does not poll in the background, infer hidden capacity, or
 require a companion server.
 
 All observations stay in Chrome's local extension storage. There are no ads,
-analytics SDKs, remote code, or extension-initiated network requests.
+analytics SDKs, or remote code. An event-driven request fetches public reset
+forecasts from codexreset.org without cookies or stored usage information.
+The monitor's host receives ordinary request metadata, such as the IP address.
 
 This is an unofficial community project and is not affiliated with or endorsed
 by OpenAI.
@@ -51,6 +58,11 @@ observation coverage, visible quota evidence, and the focus-refresh marker.
 Runs the content script only on the Codex usage dashboard so it can read and
 annotate the quota information rendered on that page.
 
+**Host access: codexreset.org**
+
+Fetches the public reset forecast when the matched dashboard requests it.
+The worker does not poll and sends no usage history or account credentials.
+
 ## Data-use disclosure
 
 - Website content: **Yes, locally only.** The extension reads visible quota
@@ -66,8 +78,10 @@ annotate the quota information rendered on that page.
   checks of the single matched dashboard solely to describe observation
   coverage.
 
-Data is not sold, used for advertising or creditworthiness, or transferred to
-third parties. It is used only for the extension's single stated purpose.
+Stored observations are not sold, used for advertising or creditworthiness, or
+transferred to third parties. They are used only for the extension's single
+stated purpose. Public forecast requests expose ordinary request metadata to
+the monitor's host as documented in the privacy policy.
 
 ## URLs
 
@@ -78,9 +92,8 @@ third parties. It is used only for the extension's single stated purpose.
 
 ## Distribution
 
-Use **Unlisted** visibility for the first release. Anyone with the Store link
-can install it and receive updates, but the item will not appear in public
-search results.
+Use GitHub releases and unpacked installation. This file does not imply that a
+Chrome Web Store listing has been submitted, reviewed, or published.
 
 ## Reviewer notes
 
