@@ -46,13 +46,19 @@ if ((manifest.description ?? "").length > 132) {
   failures.push("manifest description exceeds Chrome's 132-character limit");
 }
 
-const expectedMatch =
-  "https://chatgpt.com/codex/cloud/settings/analytics*";
+// The redesigned usage page (0.12.0) and the legacy Analytics route; nothing else.
+const expectedMatches = [
+  "https://chatgpt.com/codex/cloud/settings/analytics*",
+  "https://chatgpt.com/settings/usage*",
+];
 const matches = (manifest.content_scripts ?? []).flatMap(
   (script) => script.matches ?? []
 );
-if (matches.length !== 1 || matches[0] !== expectedMatch) {
-  failures.push(`content script must be limited to ${expectedMatch}`);
+if (
+  matches.length !== expectedMatches.length ||
+  !expectedMatches.every((match) => matches.includes(match))
+) {
+  failures.push(`content script must be limited to ${expectedMatches.join(" and ")}`);
 }
 
 const permissions = manifest.permissions ?? [];

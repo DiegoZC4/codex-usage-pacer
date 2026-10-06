@@ -7,7 +7,9 @@
   const TARGET_CLASS = "codex-usage-pacer-target";
   const FORECAST_LINK_CLASS = "codex-usage-pacer-forecast-link";
   const FORECAST_MARKER_CLASS = "codex-usage-pacer-forecast-marker";
+  const TRACKER_LINKS_CLASS = "codex-usage-pacer-tracker-links";
   const CREDIT_NOTE_CLASS = "codex-usage-pacer-credit-note";
+  const CREDIT_WEEK_CLASS = "codex-usage-pacer-credit-week";
   const PROGRESS_CLASS = "codex-usage-pacer-square-progress";
   const RESET_CALENDAR_ID = "codex-usage-pacer-reset-calendar";
   const TOOLTIP_ID = "codex-usage-pacer-tooltip";
@@ -23,6 +25,7 @@
   const RESET_LOG_STORAGE_KEY = "codexUsagePacerResetLogV1";
   const FOCUS_RELOAD_MARKER_KEY = "codexUsagePacerFocusReloadPending";
   const FORECAST_MESSAGE = "codexUsagePacer:getResetForecast";
+  const RELOAD_MESSAGE = "codexUsagePacer:reloadExtension";
   const RESET_LOG_GREEN_MINUTES = 10_000;
   const HOUR_MS = 60 * 60 * 1000;
   const DAY_MS = 24 * HOUR_MS;
@@ -31,6 +34,7 @@
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const resetLogCore = globalThis.CodexUsageResetLogCore || null;
   const resetForecastCore = globalThis.CodexUsageForecastCore || null;
+  const usagePageCore = globalThis.CodexUsagePageCore;
   let sawAway = document.hidden;
   let lastAwayAt = document.hidden ? Date.now() : 0;
   let resetLogState = resetLogCore?.normalizeState(null) || null;
@@ -53,6 +57,17 @@
   let monitorForecastSnapshot = null;
   let monitorForecastStale = false;
   let monitorForecastRequested = false;
+  const creditExpiryUI = globalThis.createCodexCreditExpiryUI?.({
+    schedule: scheduleAnnotate,
+    setTooltip: setInstantTooltip,
+    handleError: handleStorageError,
+  });
+  const creditHistoryUI = globalThis.createCodexCreditHistoryUI?.({
+    setTooltip: setInstantTooltip,
+    showTooltip: showInstantTooltip,
+    hideTooltip: hideInstantTooltip,
+    handleError: handleStorageError,
+  });
 
   window[INSTANCE_KEY]?.destroy?.();
 
@@ -60,6 +75,8 @@
     if (destroyed) return;
     destroyed = true;
     observer?.disconnect();
+    creditExpiryUI?.destroy();
+    creditHistoryUI?.destroy();
     if (evidenceCaptureTimer !== null) window.clearTimeout(evidenceCaptureTimer);
     if (evidenceSettleTimer !== null) window.clearTimeout(evidenceSettleTimer);
     window.removeEventListener("blur", markAway);
@@ -137,6 +154,7 @@
         border-radius: 0 !important;
       }
       .${PROGRESS_CLASS} {
+        position: relative;
         --codex-usage-pacer-label-size: 14px;
         --codex-usage-pacer-axis-inset: 35px;
         --codex-usage-pacer-rail-height: 12px;
@@ -168,6 +186,26 @@
         left: auto !important;
         right: 0 !important;
       }
+      .${PROGRESS_CLASS} > progress {
+        position: absolute;
+        top: var(--codex-usage-pacer-marker-space);
+        left: 0;
+        width: 100%;
+        height: var(--codex-usage-pacer-rail-height);
+        appearance: none;
+        border: 0;
+        border-radius: 0;
+        direction: rtl;
+        background: #ebebf0;
+      }
+      .${PROGRESS_CLASS} > progress::-webkit-progress-bar { background: #ebebf0; }
+      .${PROGRESS_CLASS} > progress::-webkit-progress-value { background: var(--codex-usage-pacer-fill) !important; }
+      .${PROGRESS_CLASS} > progress::-moz-progress-bar { background: var(--codex-usage-pacer-fill) !important; }
+      [data-codex-usage-pacer-layout="settings"] .${PROGRESS_CLASS} { margin-block-start: 6px !important; }
+      [data-codex-usage-pacer-layout="settings"] .${TARGET_CLASS} { margin-left: 6px; font-size: 12px; line-height: inherit; }
+      [data-codex-usage-pacer-layout="settings"] .${FORECAST_LINK_CLASS} { font-size: 12px; line-height: inherit; }
+      [data-codex-usage-pacer-layout="settings"] [data-codex-usage-pacer-remaining] { white-space: normal; }
+      [data-codex-usage-pacer-layout="settings"] > .codex-usage-pacer-credit-expirations { padding: 12px 16px; }
       .codex-usage-pacer-tick {
         position: absolute;
         top: calc(var(--codex-usage-pacer-marker-space) + var(--codex-usage-pacer-rail-height));
@@ -249,6 +287,27 @@
         text-decoration: underline;
         text-underline-offset: 2px;
       }
+      .${TRACKER_LINKS_CLASS} {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 16px;
+        max-width: 100%;
+        font-size: 13px;
+        line-height: 20px;
+      }
+      .${TRACKER_LINKS_CLASS} a {
+        color: var(--text-secondary, #b4b4b4);
+        overflow-wrap: anywhere;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .${TRACKER_LINKS_CLASS} a:hover {
+        color: var(--text-primary, #fff);
+      }
+      .${TRACKER_LINKS_CLASS} a:focus-visible {
+        outline: 2px solid #7dd3fc;
+        outline-offset: 3px;
+      }
       .${CREDIT_NOTE_CLASS} {
         margin-top: 8px;
         color: rgba(255, 255, 255, 0.68);
@@ -260,6 +319,75 @@
       .${CREDIT_NOTE_CLASS}[data-missing="true"] {
         color: rgba(255, 255, 255, 0.48);
       }
+      .${CREDIT_WEEK_CLASS} {
+        display: block;
+        width: fit-content;
+        max-width: 100%;
+        color: var(--text-secondary, #b4b4b4);
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 500;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .codex-usage-pacer-credit-expirations {
+        min-width: 0;
+        color: var(--text-primary, inherit);
+        font-size: 13px;
+        line-height: 20px;
+        letter-spacing: 0;
+      }
+      .codex-credit-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .codex-credit-heading h4 { margin: 0; font: inherit; font-weight: 600; }
+      .codex-credit-icon { display: inline-flex; flex: 0 0 28px; width: 28px; height: 28px; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+      .codex-credit-icon:hover { background: var(--bg-tertiary, #8882); }
+      .codex-credit-icon:focus-visible { outline: 2px solid #38bdf8; outline-offset: 2px; }
+      .codex-usage-pacer-credit-expirations table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 4px; font-variant-numeric: tabular-nums; }
+      .codex-usage-pacer-credit-expirations th, .codex-usage-pacer-credit-expirations td { padding: 6px 0; border-bottom: 1px solid var(--border-subtle, #8883); text-align: right; font-weight: 400; overflow-wrap: anywhere; vertical-align: top; }
+      .codex-usage-pacer-credit-expirations th:first-child { width: 46%; text-align: left; padding-right: 12px; }
+      .codex-usage-pacer-credit-expirations thead { color: var(--text-secondary, #999); font-size: 12px; }
+      .codex-usage-pacer-credit-expirations td:nth-child(2) { font-weight: 650; }
+      .codex-usage-pacer-credit-expirations a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+      .codex-usage-pacer-credit-expirations tr[data-expired="true"] { color: #e99557; }
+      .codex-credit-basis { margin: 8px 0 0; color: var(--text-secondary, #999); font-size: 11px; line-height: 16px; }
+      .codex-credit-editor { margin-top: 12px; border-top: 1px solid var(--border-subtle, #8883); padding-top: 12px; }
+      .codex-credit-editor[hidden], .codex-credit-form [hidden] { display: none; }
+      .codex-credit-grant { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
+      .codex-credit-grant > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+      .codex-credit-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px 12px; }
+      .codex-credit-form label { display: flex; flex-direction: column; min-width: 0; gap: 4px; color: var(--text-secondary, #999); font-size: 12px; }
+      .codex-credit-form input, .codex-credit-form select { width: 100%; min-width: 0; box-sizing: border-box; border: 1px solid var(--border-default, #8887); border-radius: 4px; background: var(--bg-primary, transparent); color: var(--text-primary, inherit); padding: 6px 8px; font: inherit; line-height: 20px; }
+      .codex-credit-history-field, .codex-credit-source-field, .codex-credit-form-actions, .codex-credit-form-status { grid-column: 1 / -1; }
+      .codex-credit-form-actions { display: flex; gap: 8px; }
+      .codex-credit-form-actions button { border: 1px solid var(--border-default, #8887); border-radius: 4px; padding: 5px 14px; background: transparent; color: inherit; cursor: pointer; font: inherit; }
+      .codex-credit-form-actions button[type="submit"] { background: var(--text-primary, #ddd); color: var(--bg-primary, #222); }
+      .codex-credit-form-status { margin: 0; color: #ef8b81; }
+      .codex-usage-pacer-credit-history { grid-column: 1 / -1; min-width: 0; width: 100%; color: var(--text-primary, inherit); font-size: 12px; line-height: 18px; letter-spacing: 0; padding-top: 12px; font-variant-numeric: tabular-nums; }
+      .codex-credit-history-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+      .codex-credit-history-heading h4 { margin: 0; font: inherit; font-size: 13px; font-weight: 600; }
+      .codex-credit-history-ranges { display: inline-flex; flex: 0 0 auto; border: 1px solid var(--border-default, #8885); border-radius: 5px; padding: 2px; }
+      .codex-credit-history-ranges button { width: 38px; height: 26px; padding: 0; border: 0; border-radius: 3px; font: inherit; background: transparent; color: var(--text-secondary, #999); cursor: pointer; }
+      .codex-credit-history-ranges button[aria-pressed="true"] { background: var(--bg-tertiary, #8883); color: var(--text-primary, inherit); font-weight: 650; }
+      .codex-credit-history-ranges button:hover { color: var(--text-primary, inherit); }
+      .codex-credit-history-ranges button:focus-visible, .codex-credit-history-plot:focus-visible { outline: 2px solid #0ea5e9; outline-offset: 2px; }
+      .codex-credit-history-stats { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 12px; margin: 8px 0; }
+      .codex-credit-history-rate { font-weight: 600; }
+      .codex-credit-history-summary, .codex-credit-history-updated, .codex-credit-history-empty { color: var(--text-secondary, #999); font-size: 11px; }
+      .codex-credit-history-updated { margin: 3px 0 0; overflow-wrap: anywhere; }
+      .codex-credit-history-plot { width: 100%; height: 194px; touch-action: pan-y; cursor: crosshair; }
+      .codex-credit-history-plot svg { display: block; width: 100%; height: 194px; overflow: visible; }
+      .codex-credit-history-plot text { fill: var(--text-secondary, #999); font: 10px ui-sans-serif, system-ui, sans-serif; letter-spacing: 0; }
+      .codex-credit-history-grid { stroke: var(--border-subtle, #8883); stroke-width: 1; }
+      .codex-credit-history-line { fill: none; stroke: #0ea5e9; stroke-width: 1.7; }
+      .codex-credit-history-line[data-stale="true"] { stroke-dasharray: 4 4; opacity: 0.55; }
+      .codex-credit-history-point { fill: #0ea5e9; }
+      .codex-credit-history-point[data-increase="true"] { fill: #d6a132; stroke: var(--bg-primary, #222); stroke-width: 1; }
+      .codex-credit-history-crosshair { stroke: var(--text-secondary, #999); stroke-width: 1; stroke-dasharray: 3 3; }
+      .codex-credit-history-selected { fill: var(--bg-primary, #222); stroke: #0ea5e9; stroke-width: 2; }
+      .codex-credit-history-empty { margin: 0; min-height: 194px; display: flex; align-items: center; justify-content: center; }
+      .codex-credit-history-empty[hidden], .codex-credit-history-plot[hidden] { display: none; }
       #${TOOLTIP_ID} {
         position: fixed;
         z-index: 2147483647;
@@ -292,6 +420,7 @@
       }
       .codex-usage-pacer-calendar-header {
         display: flex;
+        flex-wrap: wrap;
         align-items: flex-end;
         justify-content: space-between;
         gap: 16px;
@@ -769,6 +898,8 @@
   }
 
   function isManagedNode(node) {
+    if (!node) return false;
+    if (node.nodeType === Node.TEXT_NODE) return isManagedNode(node.parentElement);
     if (node.nodeType !== Node.ELEMENT_NODE) return false;
     if (node.hasAttribute?.(MANAGED_ATTR)) return true;
     if (node.id === STYLE_ID) return true;
@@ -792,7 +923,7 @@
   function cleanupUsageCard(card) {
     card
       .querySelectorAll(
-        `.${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${FORECAST_LINK_CLASS}`
+        `.${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${FORECAST_LINK_CLASS}, .${TRACKER_LINKS_CLASS}`
       )
       .forEach((node) => node.remove());
     card.querySelectorAll(`.${PROGRESS_CLASS}, [${PROGRESS_ATTR}]`).forEach((node) => {
@@ -807,18 +938,11 @@
   }
 
   function sourceCardText(card) {
-    const copy = card.cloneNode(true);
-    copy
-      .querySelectorAll(
-        `[${MANAGED_ATTR}], .${OVERLAY_CLASS}, .${OLD_SUMMARY_CLASS}, .${TARGET_CLASS}, .${FORECAST_LINK_CLASS}, .${CREDIT_NOTE_CLASS}`
-      )
-      .forEach((node) => node.remove());
-    return (copy.textContent || "").replace(/\s+/g, " ").trim();
+    return usagePageCore.sourceText(card);
   }
 
   function parseRemainingRaw(card) {
-    const match = sourceCardText(card).match(/(\d+(?:\.\d+)?)%\s*remaining/i);
-    return match ? `${match[1]}%` : "";
+    return usagePageCore.remainingRaw(sourceCardText(card));
   }
 
   function parseRemaining(card) {
@@ -832,45 +956,20 @@
   }
 
   function parseUsageLabel(card) {
-    const match = sourceCardText(card).match(/^(.*?)\s*\d+(?:\.\d+)?%\s*remaining/i);
-    return match?.[1]?.trim() || "Usage limit";
-  }
-
-  function parseVisibleResetText(card) {
-    const text = sourceCardText(card);
-    const dated = text.match(/Resets\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM))/i);
-    if (dated) return dated[1].trim();
-
-    const timed = text.match(/Resets\s+(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
-    return timed ? timed[1].trim() : "";
+    return usagePageCore.usageLabel(sourceCardText(card));
   }
 
   function parseResetText(card) {
-    return parseVisibleResetText(card) || card.getAttribute(RESET_TEXT_ATTR) || "";
+    return usagePageCore.resetText(card);
   }
 
   function parseResetDate(resetText, now) {
-    if (!resetText) return null;
-
-    if (/^\d{1,2}:\d{2}\s*(AM|PM)$/i.test(resetText)) {
-      const [_, hh, mm, ampm] = resetText.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i) || [];
-      let hour = Number(hh);
-      const minute = Number(mm);
-      if (/PM/i.test(ampm) && hour !== 12) hour += 12;
-      if (/AM/i.test(ampm) && hour === 12) hour = 0;
-      const date = new Date(now);
-      date.setHours(hour, minute, 0, 0);
-      if (date.getTime() <= now.getTime() - 60 * 1000) {
-        date.setDate(date.getDate() + 1);
-      }
-      return date;
-    }
-
-    const parsed = new Date(resetText);
-    return Number.isFinite(parsed.getTime()) ? parsed : null;
+    return usagePageCore.parseResetDate(resetText, now);
   }
 
   function findProgressBar(card) {
+    const native = card.querySelector('progress[aria-label="Usage remaining"]');
+    if (native) return native.parentElement;
     const candidates = [...card.querySelectorAll("div")].filter((el) => {
       const rect = el.getBoundingClientRect();
       return rect.width > 120 && rect.height >= 8 && rect.height <= 18;
@@ -897,52 +996,33 @@
   function findRemainingRow(card) {
     const rows = [...card.querySelectorAll("div, p, span")].filter((el) => {
       const text = (el.textContent || "").replace(/\s+/g, " ").trim();
-      return /\d+(?:\.\d+)?%\s*remaining/i.test(text);
+      return !isManagedNode(el) && Boolean(usagePageCore.remainingRaw(text));
     });
     return rows.sort((a, b) => (a.textContent || "").length - (b.textContent || "").length)[0] || null;
   }
 
   function getCards() {
-    return [...document.querySelectorAll("article")].filter((card) => {
-      const text = sourceCardText(card);
-      const trimmed = text.trim();
-      const isFiveHour = /^5 hour usage limit/.test(trimmed);
-      const isWeekly = /^Weekly usage limit/.test(trimmed);
-      return isFiveHour || isWeekly;
-    });
+    return usagePageCore.candidateCards(document).filter((card) => usagePageCore.usageKind(sourceCardText(card)));
   }
 
   function getEvidenceUsageCards() {
-    return [...document.querySelectorAll("article")].filter((card) =>
-      /\d+(?:\.\d+)?%\s*remaining/i.test(sourceCardText(card))
-    );
+    return usagePageCore.candidateCards(document).filter((card) => parseRemainingRaw(card));
   }
 
   function getUsageCandidateCards() {
-    return [...document.querySelectorAll("article")].filter((card) => {
-      const text = sourceCardText(card);
-      return !/^Credits remaining\b/i.test(text) && /\b(?:usage|remaining|Codex)\b/i.test(text);
-    });
+    return usagePageCore.candidateCards(document);
   }
 
   function getCreditCards() {
-    return [...document.querySelectorAll("article")].filter((card) => {
-      const text = sourceCardText(card);
-      return /^Credits remaining\b/i.test(text) || /\b\d+\s+(?:reset\s+)?credits?\s+(?:available|remaining)\b/i.test(text);
-    });
+    return usagePageCore.creditCards(document);
   }
 
   function parseCreditCountRaw(card) {
-    const text = sourceCardText(card);
-    const compactMatch = text.match(/Credits remaining\s*(\d+)/i);
-    if (compactMatch) return compactMatch[1];
-    const availableMatch = text.match(/\b(\d+)\s+(?:reset\s+)?credits?\s+(?:available|remaining)\b/i);
-    return availableMatch?.[1] || "";
+    return resetLogCore?.parseCreditBalance(sourceCardText(card)).countRaw || "";
   }
 
   function parseCreditCount(card) {
-    const raw = parseCreditCountRaw(card);
-    return raw ? Number(raw) : null;
+    return resetLogCore?.parseCreditBalance(sourceCardText(card)).count ?? null;
   }
 
   function parseCreditExpiryLines(card) {
@@ -1021,7 +1101,7 @@
 
     const creditCounts = creditCards
       .map(parseCreditCount)
-      .filter((value) => Number.isInteger(value));
+      .filter((value) => Number.isFinite(value));
     const creditCountRaw = creditCards
       .map(parseCreditCountRaw)
       .filter(Boolean)
@@ -1062,8 +1142,34 @@
   }
 
   function annotateCreditCard(card) {
-    card.querySelectorAll(`.${CREDIT_NOTE_CLASS}`).forEach((node) => node.remove());
+    const balanceRow = card.querySelector(usagePageCore.SETTINGS_ROW);
+    if (balanceRow) card.dataset.codexUsagePacerLayout = "settings";
+    card.querySelectorAll(`.${CREDIT_NOTE_CLASS}, .${CREDIT_WEEK_CLASS}`).forEach((node) => node.remove());
     const count = parseCreditCount(card);
+    if (resetLogCore?.isSpendingCreditText(sourceCardText(card))) {
+      const percent = resetLogCore.estimateCreditWeeklyPercent(count);
+      if (percent !== null) {
+        const link = document.createElement("a");
+        link.className = CREDIT_WEEK_CLASS;
+        link.setAttribute(MANAGED_ATTR, "true");
+        link.href = resetLogCore.WEEKLY_CREDITS_SOURCE_URL;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = `~${Math.round(percent)}% of a week (est.)`;
+        setInstantTooltip(link, [
+          `Pro 20x estimate: ${resetLogCore.PROVISIONAL_WEEKLY_CREDITS.toLocaleString("en-US")} credits per week.`,
+          "Provisional community estimate, not an OpenAI-published allowance.",
+          "Weekly pacing is unchanged.",
+        ].join("\n"));
+        const balanceLabel = balanceRow && [...balanceRow.querySelectorAll("div")].find((node) =>
+          node.children.length === 0 && /^\d[\d.,]*\s+credits?\s+remaining\b/i.test(node.textContent.trim())
+        );
+        (balanceLabel?.parentElement || card.querySelector("header") || card).appendChild(link);
+      }
+      creditExpiryUI?.render(card, count, resetLogState);
+      if (resetLogStorageReady) creditHistoryUI?.render(card, resetLogState);
+      return;
+    }
     const lines = parseCreditExpiryLines(card);
     const note = document.createElement("div");
     note.className = CREDIT_NOTE_CLASS;
@@ -1170,7 +1276,10 @@
 
   function ensureResetCalendar(cards) {
     if (!resetLogStorageReady || !resetLogState) return null;
-    const cardGroup = cards[0]?.parentElement;
+    const settingsCard = cards.find((card) => card.matches(usagePageCore.SETTINGS_ROW));
+    const cardGroup = settingsCard
+      ? (getCreditCards()[0]?.closest("section") || settingsCard.closest("section") || settingsCard.parentElement)
+      : cards[0]?.parentElement;
     if (!cardGroup) return null;
 
     let root = document.getElementById(RESET_CALENDAR_ID);
@@ -1190,6 +1299,7 @@
             <span class="codex-usage-pacer-calendar-month" aria-live="polite"></span>
             <button type="button" data-calendar-action="next" aria-label="Next month">&rsaquo;</button>
             <button type="button" data-calendar-action="today">Today</button>
+            <button type="button" data-calendar-action="reload-extension" aria-label="Reload extension">&#x21bb;</button>
           </div>
         </div>
         <div class="codex-usage-pacer-calendar-scroll">
@@ -1217,6 +1327,25 @@
       root.querySelector('[data-calendar-action="today"]').addEventListener("click", () => {
         calendarCursor = startOfMonth(new Date());
         renderResetCalendar();
+      });
+      const reloadButton = root.querySelector('[data-calendar-action="reload-extension"]');
+      setInstantTooltip(reloadButton, "Reload extension");
+      reloadButton.addEventListener("click", async (event) => {
+        if (!event.isTrusted || reloadButton.disabled) return;
+        reloadButton.disabled = true;
+        setInstantTooltip(reloadButton, "Reloading extension");
+        try {
+          await chrome.storage.local.set({ [RESET_LOG_STORAGE_KEY]: resetLogState });
+          const result = await chrome.runtime.sendMessage({ type: RELOAD_MESSAGE });
+          if (!result?.ok) throw new Error(result?.error || "Reload was not accepted");
+        } catch (error) {
+          if (!hasExtensionContext() || isExtensionContextInvalidatedError(error)) {
+            retireInvalidatedInstance();
+            return;
+          }
+          reloadButton.disabled = false;
+          setInstantTooltip(reloadButton, `Reload failed: ${error.message}`);
+        }
       });
     }
 
@@ -1862,6 +1991,7 @@
     resetLogState = result.state;
     persistResetLogState();
     renderResetCalendar();
+    scheduleAnnotate();
   }
 
   function processWeeklyResetObservation(observation) {
@@ -1932,6 +2062,7 @@
       processEvidenceObservation(observation);
     }
     renderResetCalendar();
+    scheduleAnnotate();
   }
 
   function appendTick(fragment, leftPercent, labelText, titleText, kind) {
@@ -2040,6 +2171,27 @@
     return link;
   }
 
+  function appendResetTrackerLinks(progressBar, resetRow) {
+    const links = document.createElement("nav");
+    links.className = TRACKER_LINKS_CLASS;
+    links.setAttribute(MANAGED_ATTR, "true");
+    links.setAttribute("aria-label", "Reset trackers and service status");
+    for (const [label, url] of [
+      ["Codex resets", "https://codexreset.org/"],
+      ["Claude resets", "https://claude-resets.com/"],
+      ["OpenAI status", "https://status.openai.com/"],
+    ]) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.textContent = label;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      links.appendChild(link);
+    }
+    if (resetRow) resetRow.appendChild(links);
+    else progressBar.insertAdjacentElement("afterend", links);
+  }
+
   async function requestResetForecast() {
     if (monitorForecastRequested || !resetForecastCore || destroyed) return;
     monitorForecastRequested = true;
@@ -2075,8 +2227,8 @@
     cleanupUsageCard(card);
 
     const text = (card.textContent || "").replace(/\s+/g, " ").trim();
-    const isFiveHour = /^5 hour usage limit/.test(text);
-    const isWeekly = /^Weekly usage limit/.test(text);
+    const isFiveHour = usagePageCore.usageKind(text) === "five-hour";
+    const isWeekly = usagePageCore.usageKind(text) === "weekly";
     if (!isFiveHour && !isWeekly) return;
 
     const remaining = parseRemaining(card);
@@ -2085,14 +2237,23 @@
     const resetRow = findResetRow(card);
     const remainingRow = findRemainingRow(card);
     if (!progressBar || !remainingRow) return;
+    const isSettings = card.matches(usagePageCore.SETTINGS_ROW);
+    if (isSettings) {
+      card.dataset.codexUsagePacerLayout = "settings";
+      remainingRow.setAttribute("data-codex-usage-pacer-remaining", "true");
+    }
 
     const windowMs = isFiveHour ? 5 * 60 * 60 * 1000 : 7 * 24 * 60 * 60 * 1000;
-    const isFullWindow = remaining !== null && remaining >= 99.5;
+    const reportedResetDate = parseResetDate(resetText, now);
+    const isFullWindow = remaining === 100 && !reportedResetDate;
 
     const resetDate = isFullWindow
       ? new Date(now.getTime() + windowMs)
-      : parseResetDate(resetText, now);
-    if (!resetDate) return;
+      : reportedResetDate;
+    if (!resetDate) {
+      if (isWeekly) appendResetTrackerLinks(progressBar, isSettings ? null : resetRow);
+      return;
+    }
 
     if (isFullWindow) {
       card.removeAttribute(RESET_TEXT_ATTR);
@@ -2117,6 +2278,7 @@
     progressBar.classList.add(PROGRESS_CLASS);
     progressBar.setAttribute(PROGRESS_ATTR, "true");
     progressBar.style.overflow = "visible";
+    progressBar.style.setProperty("--codex-usage-pacer-fill", remaining >= idealRemaining ? "#22c55e" : "#fb6b70");
     const overlay = document.createElement("div");
     overlay.className = OVERLAY_CLASS;
     overlay.setAttribute(MANAGED_ATTR, "true");
@@ -2158,10 +2320,11 @@
     if (forecast?.snapshot.announcement) remainingRow.appendChild(buildForecastSourceLink(forecast, true));
     if (forecast) remainingRow.appendChild(buildForecastSourceLink(forecast));
 
-    if (resetRow) {
+    if (resetRow && !isSettings) {
       resetRow.querySelectorAll(`.${OLD_SUMMARY_CLASS}`).forEach((node) => node.remove());
       resetRow.textContent = "";
     }
+    if (isWeekly) appendResetTrackerLinks(progressBar, isSettings ? null : resetRow);
 
     return isWeekly
       ? {
@@ -2176,6 +2339,7 @@
 
   function maybeCaptureEvidenceObservation(now, force = false) {
     if (evidenceObservationCaptured) return;
+    if (!isUsageView()) return;
     if (!force) {
       if (getEvidenceUsageCards().length === 0) return;
       if (evidenceSettleTimer !== null) window.clearTimeout(evidenceSettleTimer);
@@ -2198,8 +2362,14 @@
     processEvidenceObservation(buildEvidenceObservation(now));
   }
 
+  function isUsageView() {
+    if (window.location.hostname === "chatgpt.com" && !usagePageCore.isUsagePath(window.location.pathname)) return false;
+    return !(window.location.pathname.startsWith("/settings/usage") && new URLSearchParams(window.location.search).get("tab") === "analytics");
+  }
+
   function annotate() {
     if (destroyed) return;
+    if (!isUsageView()) return;
     if (!hasExtensionContext()) {
       retireInvalidatedInstance();
       return;
@@ -2237,6 +2407,7 @@
   }
 
   function maybeReloadOnFocus() {
+    if (!isUsageView()) return;
     if (document.hidden || !sawAway || focusReloadPending) return;
 
     const now = Date.now();
@@ -2291,14 +2462,18 @@
   document.addEventListener("focusout", handleTooltipFocusOut);
 
   observer = new MutationObserver((mutations) => {
-    const hasPageNode = mutations.some((m) =>
+    const hasPageNode = mutations.some((m) => !isManagedNode(m.target) && (
+      m.type === "characterData" || m.type === "attributes" ||
       [...m.addedNodes].some((n) => n.nodeType === Node.ELEMENT_NODE && !isManagedNode(n))
-    );
+    ));
     if (hasPageNode) {
       scheduleAnnotate();
     }
   });
-  observer.observe(document.documentElement, { childList: true, subtree: true });
+  observer.observe(document.documentElement, {
+    childList: true, characterData: true, attributes: true,
+    attributeFilter: ["title", "datetime", "value"], subtree: true,
+  });
 
   window[INSTANCE_KEY] = {
     destroy: destroyInstance,
@@ -2309,6 +2484,8 @@
     maybeCaptureEvidenceObservation(new Date(), true);
   }, EVIDENCE_CAPTURE_FALLBACK_MS);
   loadResetLogState();
+  creditExpiryUI?.load();
+  creditHistoryUI?.load();
   requestResetForecast();
   annotate();
 })();

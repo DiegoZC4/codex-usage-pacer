@@ -17,6 +17,8 @@
   const MAX_USAGE_SAMPLES = 20_000;
   const MAX_OBSERVATION_CHECKS = 20_000;
   const MAX_EVIDENCE_CHANGES = 20_000;
+  const PROVISIONAL_WEEKLY_CREDITS = 55_000;
+  const WEEKLY_CREDITS_SOURCE_URL = "https://community.openai.com/t/gpt-6-astra-on-pro-20x-less-credit-per-week/1396026";
 
   function isFiniteNumber(value) {
     return typeof value === "number" && Number.isFinite(value);
@@ -34,6 +36,26 @@
 
   function normalizeNullableNumber(value) {
     return isFiniteNumber(value) ? value : null;
+  }
+
+  function isSpendingCreditText(text) {
+    return typeof text === "string" && /^(?:Credits remaining(?=\s|\d|$)|\d[\d.,]*\s+credits?\s+remaining\b)/i.test(text.trim());
+  }
+
+  function estimateCreditWeeklyPercent(count) {
+    if (!isFiniteNumber(count) || count < 0) return null;
+    return count / PROVISIONAL_WEEKLY_CREDITS * 100;
+  }
+
+  function parseCreditBalance(text) {
+    const source = typeof text === "string" ? text : "";
+    const match = source.match(/Credits remaining\s*(\d[\d.,]*)/i)
+      || source.match(/\b(\d[\d.,]*)\s+(?:reset\s+)?credits?\s+(?:available|remaining)\b/i);
+    const countRaw = match?.[1] || null;
+    const valid = countRaw !== null
+      && /^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(countRaw);
+    const count = valid ? Number(countRaw.replaceAll(",", "")) : null;
+    return { countRaw, count: isFiniteNumber(count) ? count : null };
   }
 
   function normalizeLimitEvidence(value) {
@@ -75,7 +97,7 @@
           .slice(0, 20)
       : [];
     return {
-      count: Number.isInteger(value.count) && value.count >= 0 ? value.count : null,
+      count: isFiniteNumber(value.count) && value.count >= 0 ? value.count : null,
       countRaw: normalizeText(value.countRaw, 80),
       expiryRaw,
       dataSource: value.dataSource === "api" ? "api" : "dom",
@@ -577,9 +599,14 @@
     MAX_OBSERVATION_CHECKS,
     MAX_USAGE_SAMPLES,
     MINUTE_MS,
+    PROVISIONAL_WEEKLY_CREDITS,
+    WEEKLY_CREDITS_SOURCE_URL,
     classifyUsageChange,
     classifyUsageJump: classifyUsageChange,
+    estimateCreditWeeklyPercent,
+    isSpendingCreditText,
     normalizeState,
+    parseCreditBalance,
     processEvidenceObservation,
     processWeeklyObservation,
     shiftHue,

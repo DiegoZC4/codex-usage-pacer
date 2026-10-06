@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Credit expiration browser tests</title>
+<style>
+  * { box-sizing: border-box; }
+  :root { --text-primary:#ededed; --text-secondary:#aaa; --bg-primary:#202020; --border-subtle:#444; color-scheme:dark; }
+  body { margin:0; padding:20px; background:#101010; color:var(--text-primary); font:14px system-ui,sans-serif; }
+  main { max-width:650px; }
+  article { display:flex; flex-direction:column; gap:16px; padding:24px; border:1px solid #444; border-radius:8px; }
+  header { display:flex; flex-direction:column; gap:4px; }
+  p { margin:0; }
+  .balance { font-size:24px; font-weight:600; }
+  #results { white-space:pre-wrap; line-height:1.5; }
+  #controls { display:flex; gap:8px; margin:12px 0; }
+  #controls button { padding:8px; }
+</style>
+<main>
+  <article id="credits"><header><p>Credits remaining</p><span class="balance">95,600</span></header><p>Credits extend usage beyond your plan limits.</p></article>
+  <div id="controls"><button id="debit">Simulate 550-credit debit</button><button id="invalidate">Retire extension context</button></div>
+  <pre id="results">Running...</pre>
+</main>
+<script src="../usage-page-core.js"></script>
+<script src="../forecast-core.js"></script>
+<script src="../reset-log-core.js"></script>
+<script src="../credit-expiry-core.js"></script>
+<script src="../credit-expiry-ui.js"></script>
+<script src="../credit-history-core.js"></script>
+<script src="../credit-history-ui.js"></script>
+<script>
+  const now = Date.now();
+  const at = now - 60000;
+  const history = {
+    evidenceChanges: [{ id:"credit-grant", entityType:"credits", entityKey:"credits", label:"Credits", detectedAtMs:at, previousCheckAtMs:at-60000, extensionVersion:"0.10.0", changedFields:["count"], oldValue:{count:33564,countRaw:"33,564"}, newValue:{count:96064,countRaw:"96,064"} }],
+    latestEvidence:{checkedAtMs:at,limits:[],credits:{count:96064,countRaw:"96,064"}},
+  };
+  const initialConfig = { grants:[{id:"promo",label:"Pro transition",amount:62500,observedAtMs:at,expiresOn:"2026-12-31",sourceUrl:"https://example.com/receipt",kind:"grant"}] };
+  const storage = { codexUsagePacerResetLogV1:history, [CodexUsageCreditExpiryCore.STORAGE_KEY]:initialConfig };
+  const listeners = new Set();
+  Object.defineProperty(window,"chrome",{configurable:true,value:{
+    runtime:{id:"fixture-only",getManifest:()=>({version:"0.10.0"}),sendMessage:async()=>({ok:false})},
+    storage:{local:{
+      get:async(keys)=> typeof keys === "string" ? {[keys]:storage[keys]} : {...storage},
+      set:async(values)=>{ const changes={}; for(const [key,value] of Object.entries(values)){changes[key]={oldValue:storage[key],newValue:value}; storage[key]=value;} for(const listener of listeners)listener(changes,"local"); },
+    },onChanged:{addListener:(fn)=>listeners.add(fn),removeListener:(fn)=>listeners.delete(fn)}},
+  }});
+  const messages=[];
+  function check(label, passed){ messages.push(`${passed?"PASS":"FAIL"} ${label}`); document.querySelector("#results").textContent=messages.join("\n"); if(!passed)document.body.dataset.failed="true"; }
+  document.querySelector("#debit").onclick=()=>{const node=document.querySelector(".balance");const count=Number(node.textContent.replaceAll(",",""))-550;node.textContent=count.toLocaleString("en-US");const child=document.createElement("span");document.querySelector("#controls").append(child);};
+  document.querySelector("#invalidate").onclick=()=>{window.__codexUsagePacerInstance.destroy();check("context retirement removes expiration UI and storage listener",!document.querySelector(".codex-usage-pacer-credit-expirations")&&listeners.size===0);};
+  setTimeout(()=>{
+    const section=document.querySelector(".codex-usage-pacer-credit-expirations");
+    check("expiration section appears exactly once",document.querySelectorAll(".codex-usage-pacer-credit-expirations").length===1);
+    check("December grant shows 112.8 percent and 62,036 remaining",section?.textContent.includes("~112.8%")&&section.textContent.includes("62,036"));
+    check("unassigned balance shows 61 percent and 33,564 credits",section?.textContent.includes("Date unknown")&&section.textContent.includes("33,564"));
+    const link=section?.querySelector("tbody a");
+    check("expiration links to the grant's source",link?.href==="https://example.com/receipt"&&link.rel.includes("noopener"));
+    check("allocation assumption and denominator remain explicit",section?.textContent.includes("Estimated split; dated credits spent first. 55,000 credits/week.")&&section.querySelector(".codex-credit-basis").getAttribute("data-codex-usage-pacer-tooltip").includes("undated credits last"));
+    const bounds=document.querySelector("#credits").getBoundingClientRect();
+    check("table and values fit the card",[...section.querySelectorAll("th,td")].every(el=>{const rect=el.getBoundingClientRect();return rect.left>=bounds.left&&rect.right<=bounds.right&&rect.bottom<=bounds.bottom&&el.scrollWidth<=el.clientWidth+1;}));
+    const evidence=storage.codexUsagePacerResetLogV1?.latestEvidence;
+    check("derived rows never pollute the neutral evidence log",evidence?.credits?.count===95600&&evidence.credits.expiryRaw.length===0);
+    check("expiry setup never modifies a weekly denominator or actual balance",document.querySelector(".balance").textContent==="95,600"&&CodexUsageResetLogCore.PROVISIONAL_WEEKLY_CREDITS===55000);
+    document.body.dataset.complete="true";
+    document.title=`${document.body.dataset.failed?"FAIL":"PASS"}: credit expiration browser tests`;
+  },5500);
+</script>
+<script src="../content.js"></script>
+</html>

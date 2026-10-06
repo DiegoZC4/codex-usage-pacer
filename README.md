@@ -1,9 +1,12 @@
 # Codex Usage Pacer
 
 Codex Usage Pacer is an unofficial Chrome extension that adds pacing markers,
-local history, and reset-change evidence to the Codex usage dashboard:
+local history, and reset-change evidence to the Codex usage page:
 
-`https://chatgpt.com/codex/cloud/settings/analytics`
+`https://chatgpt.com/settings/usage`
+
+The legacy dashboard at `https://chatgpt.com/codex/cloud/settings/analytics`
+is still supported.
 
 It is designed for people who want to understand how their displayed quota
 changes over time without running a separate server or continuously polling in
@@ -11,7 +14,8 @@ the background.
 
 ![Codex Usage Pacer with representative usage data](store/screenshot-1280x800.png)
 
-The screenshot uses representative values and contains no account data.
+The screenshot shows the 0.9 layout with representative values and contains no
+account data.
 
 ## Features
 
@@ -27,7 +31,20 @@ The screenshot uses representative values and contains no account data.
 - Shows a calendar with daily usage traces and reset-change markers.
 - Preserves visible quota-card and reset-credit evidence, including missing or
   unparsable values.
-- Refreshes the Analytics page after its tab or window regains focus.
+- Supports the redesigned Usage settings page (settings rows, native progress
+  bars, `Weekly limit` and `% left`) and reads the exact reset time from its
+  countdown tooltip; rounded countdowns are never turned into timestamps.
+- Estimates the credit balance as a share of one Pro 20x week, using a
+  provisional, community-reported 55,000-credit denominator that is labeled as
+  an estimate.
+- Keeps an optional, locally saved credit-expiration ledger: record grants and
+  their expiration dates to see estimated credits per expiration date. The page
+  exposes only a combined balance, so the split is an estimate.
+- Plots credit-balance history (24 hours, 7 days, 30 days, or everything) with
+  point details and an estimated daily decline.
+- Links the Codex and Claude reset trackers and OpenAI's status page below the
+  weekly usage bar.
+- Refreshes the usage page after its tab or window regains focus.
 - Stores all extension data locally in Chrome.
 
 There is no timer-based background polling, analytics service, remote code, or
@@ -111,7 +128,8 @@ npm run package
 ```
 
 The package command creates a versioned extension ZIP in `dist/` and includes
-only the manifest, runtime scripts, and PNG icons. Personal observations,
+only the files `manifest.json` loads (runtime scripts and PNG icons) plus the
+license for the embedded Lucide icons. Personal observations,
 reference captures, and legacy server files are not bundled.
 
 Open `dev/mock.html` directly for a standalone styling fixture. It uses
@@ -121,6 +139,11 @@ Open `dev/forecast-browser-test.html` directly to check the actual forecast and
 content scripts against mocked Chrome storage and a sample usage card. Use
 `?width=360` for a narrow card or `?mode=window` for a probability-only forecast.
 The fixture never writes real extension history.
+
+`dev/usage-layout-browser-test.html` checks the redesigned Usage settings page:
+settings rows, the exact reset tooltip, decimal balances, preserved history, and
+repeated annotation without duplicate overlays. `dev/credit-expiry-browser-test.html`
+checks the credit-expiration ledger and editor. Both use isolated mock storage.
 
 ## Releases
 

@@ -1,8 +1,10 @@
 "use strict";
 
-importScripts("forecast-core.js");
+importScripts("forecast-core.js", "usage-page-core.js");
 
 const FORECAST_MESSAGE = "codexUsagePacer:getResetForecast";
+const RELOAD_MESSAGE = "codexUsagePacer:reloadExtension";
+const RELOAD_PENDING_KEY = "codexUsagePacerDevReloadPending";
 const FORECAST_CACHE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 const forecastCore = globalThis.CodexUsageForecastCore;
 let inFlightForecast = null;
@@ -49,7 +51,55 @@ function currentForecast() {
   return inFlightForecast;
 }
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+function isAnalyticsSender(sender) {
+  if (sender?.id !== chrome.runtime.id || sender.frameId !== 0 ||
+      !Number.isInteger(sender.tab?.id) || sender.tab.id < 0) return false;
+  try {
+    const url = new URL(sender.url);
+    return url.origin === "https://chatgpt.com" &&
+      globalThis.CodexUsagePageCore.isUsagePath(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+async function reloadFromAnalytics(sender, sendResponse) {
+  try {
+    // Local storage survives runtime.reload; session storage does not.
+    await chrome.storage.local.set({
+      [RELOAD_PENDING_KEY]: { tabId: sender.tab.id, requestedAtMs: Date.now() },
+    });
+    sendResponse({ ok: true });
+    chrome.runtime.reload();
+  } catch (error) {
+    sendResponse({ ok: false, error: String(error?.message || error) });
+  }
+}
+
+async function refreshAfterSelfReload(reason) {
+  const stored = await chrome.storage.local.get(RELOAD_PENDING_KEY);
+  const pending = stored?.[RELOAD_PENDING_KEY];
+  if (!pending) return;
+  await chrome.storage.local.remove(RELOAD_PENDING_KEY);
+  const ageMs = Date.now() - pending.requestedAtMs;
+  if (reason !== "update" || !Number.isInteger(pending.tabId) || pending.tabId < 0 ||
+      !Number.isFinite(ageMs) || ageMs < 0 || ageMs > 30000) return;
+  // Only the tab that explicitly requested this update is refreshed, once.
+  await chrome.tabs.reload(pending.tabId).catch(() => {});
+}
+
+chrome.runtime.onInstalled.addListener(({ reason }) => {
+  return refreshAfterSelfReload(reason).catch((error) => {
+    console.warn("Codex Usage Pacer could not refresh after its update.", error);
+  });
+});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === RELOAD_MESSAGE) {
+    if (!isAnalyticsSender(sender)) return false;
+    reloadFromAnalytics(sender, sendResponse);
+    return true;
+  }
   if (message?.type !== FORECAST_MESSAGE) return false;
   currentForecast().then(sendResponse);
   return true;

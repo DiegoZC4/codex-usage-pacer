@@ -26,10 +26,17 @@
       <div class="rail"><div class="track"></div><div class="fill"></div></div>
       <div>Resets Sep 13, 2026 8:46 PM</div>
     </article>
+    <article id="credit-card"><header><p>Credits remaining</p><div class="remaining"><span class="percent">33,564</span></div></header><div>Credits extend usage beyond your plan limits.</div></article>
   </div>
   <pre id="results">Running browser regressions...</pre>
 </main>
+<script src="../usage-page-core.js"></script>
 <script src="../forecast-core.js"></script>
+<script src="../reset-log-core.js"></script>
+<script src="../credit-expiry-core.js"></script>
+<script src="../credit-expiry-ui.js"></script>
+<script src="../credit-history-core.js"></script>
+<script src="../credit-history-ui.js"></script>
 <script>
   const core = CodexUsageForecastCore;
   const NOW = Date.parse("2026-09-07T23:00:00Z");
@@ -71,12 +78,31 @@
     static now() { return NOW; }
   };
   const mockStorage = {};
+  let fixtureEvidenceReady;
+  const fixtureEvidence = new Promise(resolve => { fixtureEvidenceReady = resolve; });
   Object.defineProperty(window, "chrome", {configurable: true, value: {
-    runtime: { id: "fixture-only", getManifest: () => ({version: "0.9.2"}),
-      sendMessage: async () => ({ok: true, stale: false, sourceHtml: html, snapshot: core.parseMonitorHtml(html, NOW)}) },
-    storage: {local: {get: async () => ({...mockStorage}), set: async (value) => Object.assign(mockStorage, value)}},
+    runtime: { id: "fixture-only", getManifest: () => ({version: "0.9.7"}),
+      sendMessage: async (message) => {
+        if (message.type === "codexUsagePacer:reloadExtension") {
+          check("reload control sends only the internal self-reload request", Boolean(mockStorage.codexUsagePacerResetLogV1));
+          document.body.dataset.reloadRequested = "true";
+          return {ok: true};
+        }
+        return {ok: true, stale: false, sourceHtml: html, snapshot: core.parseMonitorHtml(html, NOW)};
+      } },
+    storage: {local: {get: async () => ({...mockStorage}), set: async (value) => {
+      Object.assign(mockStorage, value);
+      if (mockStorage.codexUsagePacerResetLogV1?.latestEvidence) fixtureEvidenceReady();
+    }}},
   }});
-  setTimeout(() => {
+  (async () => {
+    let timeout;
+    try {
+      await Promise.race([fixtureEvidence, new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Evidence capture timed out')), 8000);
+      })]);
+    } finally { clearTimeout(timeout); }
+    await new Promise(requestAnimationFrame);
     const card = document.querySelector("#cards article");
     const links = [...card.querySelectorAll(".codex-usage-pacer-forecast-link")];
     const marker = card.querySelector(".codex-usage-pacer-forecast-marker");
@@ -91,9 +117,32 @@
     const row = card.querySelector(".remaining").getBoundingClientRect();
     const bar = card.querySelector(".rail").getBoundingClientRect();
     check("text does not overlap the usage rail", row.bottom <= bar.top);
+    const trackers = [...card.querySelectorAll(".codex-usage-pacer-tracker-links a")];
+    const expectedTrackerLinks = [
+      ["Codex resets", "https://codexreset.org/"],
+      ["Claude resets", "https://claude-resets.com/"],
+      ["OpenAI status", "https://status.openai.com/"],
+    ];
+    check("reset trackers and official status appear exactly once", trackers.length === expectedTrackerLinks.length && trackers.every((link, index) => link.textContent === expectedTrackerLinks[index][0] && link.href === expectedTrackerLinks[index][1]));
+    check("manual links open safely in new tabs", trackers.length === expectedTrackerLinks.length && trackers.every((link) => link.target === "_blank" && link.rel.includes("noopener") && link.rel.includes("noreferrer")));
+    check("manual links fit below the axis", trackers.length === expectedTrackerLinks.length && trackers.every((link) => { const r = link.getBoundingClientRect(); return r.top >= bar.bottom && r.left >= bounds.left && r.right <= bounds.right && r.bottom <= bounds.bottom; }));
+    check("navigation names both reset trackers and service status", card.querySelector(".codex-usage-pacer-tracker-links")?.getAttribute("aria-label") === "Reset trackers and service status");
+    check("calendar exposes the accessible self-reload control", Boolean(document.querySelector('[data-calendar-action="reload-extension"][aria-label="Reload extension"]')));
+    const creditCard = document.querySelector("#credit-card");
+    const creditLinks = [...creditCard.querySelectorAll(".codex-usage-pacer-credit-week")];
+    const creditLink = creditLinks[0];
+    check("credit estimate is inserted once despite repeated annotation", creditLinks.length === 1);
+    check("33,564 credits display as approximately 61 percent of a week", creditLink?.textContent === "~61% of a week (est.)");
+    check("credit estimate links to its source and names the 55k denominator", creditLink?.href === CodexUsageResetLogCore.WEEKLY_CREDITS_SOURCE_URL && creditLink?.getAttribute("data-codex-usage-pacer-tooltip").includes("55,000"));
+    const creditBounds = creditCard.getBoundingClientRect();
+    const estimateBounds = creditLink?.getBoundingClientRect();
+    check("credit estimate fits inside the card", estimateBounds && estimateBounds.left >= creditBounds.left && estimateBounds.right <= creditBounds.right && estimateBounds.bottom <= creditBounds.bottom);
+    const evidence = mockStorage.codexUsagePacerResetLogV1?.latestEvidence;
+    check("joined credit label is logged at full precision", evidence?.credits?.count === 33564 && evidence?.credits?.countRaw === "33,564");
+    check("derived percentage is not logged as a quota or expiry", evidence?.limits?.length === 1 && evidence?.credits?.expiryRaw.length === 0);
     document.body.dataset.complete = "true";
     document.title = `${document.body.dataset.failed ? "FAIL" : "PASS"}: ${messages.length} forecast browser checks`;
-  }, 1000);
+  })().catch(error => check(error.message, false));
 </script>
 <script src="../content.js"></script>
 </html>

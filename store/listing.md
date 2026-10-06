@@ -51,12 +51,13 @@ and reset information displayed there.
 **storage**
 
 Stores bounded local histories for usage changes, reset-time changes,
-observation coverage, visible quota evidence, and the focus-refresh marker.
+observation coverage, visible quota evidence, and the focus-refresh marker, plus
+optional credit-expiration entries and the selected credit-history range.
 
-**Host access: chatgpt.com/codex/cloud/settings/analytics**
+**Host access: chatgpt.com/settings/usage and chatgpt.com/codex/cloud/settings/analytics**
 
-Runs the content script only on the Codex usage dashboard so it can read and
-annotate the quota information rendered on that page.
+Runs the content script only on the Codex usage page and its legacy dashboard
+route so it can read and annotate the quota information rendered there.
 
 **Host access: codexreset.org**
 
@@ -98,7 +99,8 @@ Chrome Web Store listing has been submitted, reviewed, or published.
 ## Reviewer notes
 
 1. Sign in to ChatGPT with an account that has access to Codex.
-2. Open `https://chatgpt.com/codex/cloud/settings/analytics`.
+2. Open `https://chatgpt.com/settings/usage` (or the legacy
+   `https://chatgpt.com/codex/cloud/settings/analytics`).
 3. The extension annotates visible usage cards and adds the local calendar.
 4. Switch away from the tab and return to demonstrate the focus-triggered
    refresh.

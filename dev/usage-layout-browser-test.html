@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage layout regressions</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; background: #101010; color: #eee; font: 14px system-ui,sans-serif; }
+  main { max-width: 728px; margin: auto; }
+  section { margin-bottom: 24px; }
+  .group { border: 1px solid #444; border-radius: 8px; overflow: hidden; }
+  .row { padding: 12px 16px; }
+  .balance { display: flex; justify-content: space-between; }
+  .remaining-line { display: flex; justify-content: space-between; gap: 5px; font-size: 12px; }
+  .native-rail, progress { width: 100%; height: 6px; }
+  button { background: #333; color: #eee; border: 1px solid #666; padding: 5px 8px; }
+  #results { white-space: pre-wrap; }
+</style>
+<main>
+  <h1>Usage</h1>
+  <section id="plan">
+    <h2>Plan limits</h2>
+    <div class="group">
+      <div class="@container/settings-row row" id="weekly">
+        <div><div><div>Weekly limit</div></div></div>
+        <div><div>
+          <div class="remaining-line"><span><span title="Friday, October 9, 2026 at 2:13:29 PM PDT">Resets in 5d 18h</span></span><span id="remaining">59.25% left</span></div>
+          <div class="native-rail"><progress aria-label="Usage remaining" max="100" value="59.25"></progress></div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+  <section id="credits">
+    <h2>Credits</h2>
+    <div>
+      <div class="group" id="credit-card">
+        <div class="@container/settings-row row balance"><div><div><div>93,394.5 credits remaining</div><div>Current balance</div></div></div><div><button>Add more</button></div></div>
+        <div class="@container/settings-row row balance"><div>Automatic reload</div><button role="switch" aria-checked="false" aria-label="Set up auto-reload">Off</button></div>
+      </div>
+    </div>
+  </section>
+  <section id="resets"><h2>Usage limit resets</h2><div class="@container/settings-row row"><div>Available 1</div><div>Full reset</div><span title="Expires 10/29, 12:14 PM PDT">Expires October 29</span><button>Use reset</button></div></section>
+  <pre id="results" data-codex-usage-pacer="true">Running...</pre>
+</main>
+<script src="../usage-page-core.js"></script>
+<script src="../forecast-core.js"></script>
+<script src="../reset-log-core.js"></script>
+<script src="../credit-expiry-core.js"></script>
+<script src="../credit-expiry-ui.js"></script>
+<script src="../credit-history-core.js"></script>
+<script src="../credit-history-ui.js"></script>
+<script>
+  const historyKey = 'codexUsagePacerResetLogV1';
+  const now = Date.now();
+  let evidenceReady;
+  const evidenceCaptured = new Promise(resolve => { evidenceReady = resolve; });
+  const storage = { [historyKey]: {
+    usageSamples: [{detectedAtMs: now - 60000, remainingPercent: 60}],
+    observationChecks: [], evidenceChanges: [],
+    latestEvidence: {checkedAtMs: now - 60000, limits: [], credits: {count: 94000, countRaw: '94,000', dataSource: 'dom'}},
+  }};
+  Object.defineProperty(window, 'chrome', {configurable: true, value: {
+    runtime: {id: 'isolated-fixture', getManifest: () => ({version:'0.12.0'}), sendMessage: async () => ({ok:false})},
+    storage: {local: {get: async () => structuredClone(storage), set: async v => {
+      Object.assign(storage, structuredClone(v));
+      if (storage[historyKey].observationChecks?.length) evidenceReady();
+    }}},
+  }});
+  const results = [];
+  function check(label, result) {
+    results.push(`${result ? 'PASS' : 'FAIL'} ${label}`);
+    document.getElementById('results').textContent = results.join('\n');
+    if (!result) document.body.dataset.failed = 'true';
+  }
+  const page = CodexUsagePageCore;
+  check('one usage row, excluding resets and credits', page.candidateCards(document).length === 1);
+  check('credit settings group recognized once', page.creditCards(document).length === 1 && page.creditCards(document)[0].id === 'credit-card');
+  check('exact tooltip timestamp', page.parseResetDate(page.resetText(document.getElementById('weekly')), new Date()).toISOString() === '2026-10-09T21:13:29.000Z');
+</script>
+<script src="../content.js"></script>
+<script>
+  (async () => {
+    let timeout;
+    try {
+      await Promise.race([evidenceCaptured, new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('Evidence capture timed out')), 8000);
+      })]);
+    } finally { clearTimeout(timeout); }
+    await new Promise(requestAnimationFrame);
+    check('one pacing marker', document.querySelectorAll('.codex-usage-pacer-marker').length === 1);
+    check('calendar restored outside native settings sections', document.querySelector('#credits + #codex-usage-pacer-reset-calendar') !== null);
+    check('credit graph restored', document.querySelectorAll('.codex-usage-pacer-credit-history').length === 1);
+    check('credit expiration editor restored', document.querySelectorAll('.codex-usage-pacer-credit-expirations').length === 1);
+    check('spending credits converted without counting the reset', document.querySelector('.codex-usage-pacer-credit-week')?.textContent === '~170% of a week (est.)');
+    check('native reset countdown left intact', document.querySelector('#weekly [title]')?.textContent === 'Resets in 5d 18h');
+    check('automatic reload not modified', document.querySelector('[role=switch]').getAttribute('aria-checked') === 'false');
+    const history = storage[historyKey];
+    check('previous usage sample preserved', history.usageSamples.some(sample => sample.remainingPercent === 60));
+    check('fractional percentage recorded', history.usageSamples.at(-1).remainingPercent === 59.25);
+    check('credit balance recorded precisely once', history.latestEvidence.credits.count === 93394.5);
+    check('canonical evidence key preserved', history.latestEvidence.limits[0].key === 'weekly-usage-limit');
+    check('exact reset recorded including seconds', history.latestEvidence.limits[0].reportedResetAtMs === Date.parse('2026-10-09T21:13:29Z'));
+    const markerBefore = document.querySelector('.codex-usage-pacer-marker').style.left;
+    document.getElementById('remaining').firstChild.textContent = '100% left';
+    document.querySelector('progress').value = 100;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    check('100% uses reported reset, not a new week from now', Math.abs(parseFloat(document.querySelector('.codex-usage-pacer-marker').style.left) - parseFloat(markerBefore)) < 0.01);
+    check('rerender never duplicates ticks or graphs', document.querySelectorAll('.codex-usage-pacer-marker').length === 1 && document.querySelectorAll('.codex-usage-pacer-credit-history').length === 1);
+    check('rerender does not add a second observation', storage[historyKey].observationChecks.length === 1);
+    document.body.dataset.complete = 'true';
+  })().catch(error => check(error.message, false));
+</script>
+</html>

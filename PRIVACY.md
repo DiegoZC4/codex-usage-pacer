@@ -1,6 +1,6 @@
 # Privacy Policy
 
-Effective date: September 7, 2026
+Effective date: October 6, 2026
 
 Codex Usage Pacer keeps usage observations locally. It does not operate a
 companion server, include advertising or analytics SDKs, or sell or transmit
@@ -9,14 +9,15 @@ forecasts, described below.
 
 ## Data the extension reads
 
-When the user opens the Codex usage dashboard at
-`https://chatgpt.com/codex/cloud/settings/analytics`, the extension reads the
-quota information rendered on that page. Depending on what the page exposes,
+When the user opens the Codex usage page at `https://chatgpt.com/settings/usage`
+or the legacy dashboard at `https://chatgpt.com/codex/cloud/settings/analytics`,
+the extension reads the quota information rendered on that page. Depending on what the page exposes,
 this can include:
 
 - Usage-limit labels and remaining percentages.
 - Displayed reset dates and times.
 - Reset-credit counts and visible expiration text.
+- Displayed credit balances.
 - Whether expected quota fields appeared and could be parsed.
 - The local date and time when the page was checked.
 
@@ -27,6 +28,13 @@ the full fetched HTML and full post text are not stored.
 
 The extension does not read ChatGPT conversation contents, prompts, responses,
 passwords, payment information, browsing history, or arbitrary pages you visit.
+
+## Data you enter
+
+The optional credit-expiration ledger stores what you type into it: credit
+amounts, expiration dates, and optional source links. The extension also
+remembers which credit-history range you last selected. This information stays
+in the extension's local storage like the observations above.
 
 ## How data is used
 
@@ -72,8 +80,9 @@ use it for advertising or creditworthiness, or permit humans to read it.
 ## Permissions
 
 - `storage`: saves the local histories and focus-refresh marker described above.
-- Access to `https://chatgpt.com/codex/cloud/settings/analytics*`: lets the
-  content script read and annotate only the Codex usage dashboard.
+- Access to `https://chatgpt.com/settings/usage*` and
+  `https://chatgpt.com/codex/cloud/settings/analytics*`: lets the content script
+  read and annotate only the Codex usage page and the legacy dashboard.
 - Host permission for `https://codexreset.org/*`: lets the event-driven service
   worker fetch the public forecast without page-origin CORS restrictions.
 

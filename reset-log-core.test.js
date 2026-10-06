@@ -6,8 +6,12 @@ const {
   GREEN_AT_MINUTES,
   MAX_USAGE_SAMPLES,
   MINUTE_MS,
+  PROVISIONAL_WEEKLY_CREDITS,
   classifyUsageChange,
+  estimateCreditWeeklyPercent,
+  isSpendingCreditText,
   normalizeState,
+  parseCreditBalance,
   processEvidenceObservation,
   processWeeklyObservation,
   shiftHue,
@@ -16,6 +20,66 @@ const {
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
 const WEEK_MS = 7 * DAY_MS;
+
+test("spending credit labels work without whitespace between DOM elements", () => {
+  for (const text of ["Credits remaining33,564", "Credits remaining 0", " Credits remaining unavailable "]) {
+    assert.equal(isSpendingCreditText(text), true);
+  }
+  for (const text of ["4 reset credits available", "Weekly usage limit95% remaining", "Credits remainingSomething", null]) {
+    assert.equal(isSpendingCreditText(text), false);
+  }
+});
+
+test("credit conversion uses the provisional 55k week without capping at 100%", () => {
+  assert.equal(PROVISIONAL_WEEKLY_CREDITS, 55000);
+  assert.equal(estimateCreditWeeklyPercent(55000), 100);
+  assert.equal(estimateCreditWeeklyPercent(110000), 200);
+  assert.equal(estimateCreditWeeklyPercent(0), 0);
+  assert.equal(Math.round(estimateCreditWeeklyPercent(33564.095089)), 61);
+  assert.equal(estimateCreditWeeklyPercent(27500), 50);
+  for (const count of [null, undefined, "33564", -1, NaN, Infinity]) {
+    assert.equal(estimateCreditWeeklyPercent(count), null);
+  }
+});
+
+test("credit balances preserve grouping and decimals without truncating", () => {
+  for (const [text, countRaw, count] of [
+    ["Credits remaining33,564Credits extend usage beyond your plan limits.", "33,564", 33564],
+    ["Credits remaining 33,564.095089", "33,564.095089", 33564.095089],
+    ["Credits remaining 0", "0", 0],
+    ["4 reset credits available", "4", 4],
+    ["1,200.5 credits remaining", "1,200.5", 1200.5],
+  ]) {
+    assert.deepEqual(parseCreditBalance(text), { countRaw, count });
+  }
+});
+
+test("malformed or missing credit balances are not partial numbers", () => {
+  for (const raw of ["33,56", "33.5.6", "1,,000"]) {
+    assert.deepEqual(parseCreditBalance(`Credits remaining ${raw}`), {
+      countRaw: raw,
+      count: null,
+    });
+  }
+  assert.deepEqual(parseCreditBalance("Credits remaining unavailable"), {
+    countRaw: null,
+    count: null,
+  });
+});
+
+test("decimal credit evidence survives normalization and logs exact changes", () => {
+  const first = processEvidenceObservation(null, evidenceObservation(DAY_MS, {
+    credits: parseCreditBalance("Credits remaining 33,564.095089"),
+  }));
+  assert.equal(normalizeState(first.state).latestEvidence.credits.count, 33564.095089);
+  const second = processEvidenceObservation(first.state, evidenceObservation(DAY_MS + HOUR_MS, {
+    credits: parseCreditBalance("Credits remaining 33,564.09"),
+  }));
+  assert.equal(second.changes.length, 1);
+  assert.equal(second.changes[0].oldValue.count, 33564.095089);
+  assert.equal(second.changes[0].newValue.count, 33564.09);
+  assert.equal(second.changes[0].newValue.countRaw, "33,564.09");
+});
 
 function observation(observedAtMs, predictedResetAtMs, options = {}) {
   const value = {
