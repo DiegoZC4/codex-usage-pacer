@@ -5,6 +5,37 @@ const core = require("./usage-page-core.js");
 const reset = require("./reset-log-core.js");
 const manifest = require("./manifest.json");
 
+test("pacing colors are green at the target, including an empty or full week", () => {
+  for (const percent of [0, 1, 50, 99, 100]) assert.equal(core.pacingColor(percent, percent), "#22c55e");
+  assert.equal(core.PACING_COLOR_LIMIT, 20);
+});
+
+test("pacing colors saturate at a 20-percentage-point surplus or deficit", () => {
+  for (const remaining of [70, 80, 100]) assert.equal(core.pacingColor(remaining, 50), "#3b82f6");
+  for (const remaining of [30, 20, 0]) assert.equal(core.pacingColor(remaining, 50), "#fb6b70");
+});
+
+test("pacing colors blend proportionally in both directions", () => {
+  assert.equal(core.pacingColor(95, 99), "color-mix(in oklab, #22c55e, #fb6b70 20%)");
+  assert.equal(core.pacingColor(99, 95), "color-mix(in oklab, #22c55e, #3b82f6 20%)");
+  assert.equal(core.pacingColor(40, 50), "color-mix(in oklab, #22c55e, #fb6b70 50%)");
+  assert.equal(core.pacingColor(60, 50), "color-mix(in oklab, #22c55e, #3b82f6 50%)");
+});
+
+test("pacing uses absolute percentage points without rounding or relative-target scaling", () => {
+  assert.equal(core.pacingColor(95.5, 99.25), "color-mix(in oklab, #22c55e, #fb6b70 18.75%)");
+  assert.equal(core.pacingColor(0, 4), core.pacingColor(95, 99));
+  assert.equal(core.pacingColor(4, 0), core.pacingColor(99, 95));
+  assert.notEqual(core.pacingColor(99.25, 99.5), core.pacingColor(99.5, 99.5));
+});
+
+test("missing or invalid percentages do not become misleading pacing colors", () => {
+  for (const value of [null, undefined, NaN, Infinity, "95", -1, 101]) {
+    assert.equal(core.pacingColor(value, 50), null);
+    assert.equal(core.pacingColor(50, value), null);
+  }
+});
+
 test("legacy and redesigned labels share stable evidence keys", () => {
   for (const text of ["Weekly usage limit59% remaining", "Weekly limit Resets in 5d 18h 59% left"]) {
     assert.equal(core.usageKind(text), "weekly");

@@ -9,6 +9,17 @@
   const SETTINGS_ROW = '[class~="@container/settings-row"]';
   const MANAGED = '[data-codex-usage-pacer]';
   const REMAINING = /(\d+(?:\.\d+)?)%\s*(?:remaining|left)\b/i;
+  const PACING_COLOR_LIMIT = 20;
+
+  function pacingColor(remaining, target) {
+    if (![remaining, target].every(value => Number.isFinite(value) && value >= 0 && value <= 100)) return null;
+    const deviation = remaining - target;
+    const weight = Math.min(Math.abs(deviation) / PACING_COLOR_LIMIT, 1) * 100;
+    if (weight === 0) return "#22c55e";
+    const endColor = deviation > 0 ? "#3b82f6" : "#fb6b70";
+    if (weight === 100) return endColor;
+    return `color-mix(in oklab, #22c55e, ${endColor} ${weight}%)`;
+  }
 
   function sourceText(card) {
     const copy = card.cloneNode(true);
@@ -90,5 +101,5 @@
     return ["/codex/cloud/settings/analytics", "/settings/usage"].includes(path.replace(/\/$/, ""));
   }
 
-  return { SETTINGS_ROW, sourceText, usageKind, remainingRaw, usageLabel, candidateCards, creditCards, parseResetDate, resetText, isUsagePath };
+  return { SETTINGS_ROW, PACING_COLOR_LIMIT, pacingColor, sourceText, usageKind, remainingRaw, usageLabel, candidateCards, creditCards, parseResetDate, resetText, isUsagePath };
 });

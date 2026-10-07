@@ -20,6 +20,8 @@ account data.
 ## Features
 
 - Adds even-pace targets and time-axis tick marks to visible usage cards.
+- Colors usage bars continuously: green on pace, blending toward blue for a
+  surplus or red for a deficit, reaching full color at 20 percentage points.
 - Links public reset forecasts and their supporting announcements, with
   immediate probability and provenance tooltips.
 - Marks high-confidence, source-supported reset times on the usage bar without
@@ -55,6 +57,14 @@ companion server.
 The yellow marker and target percentage always use OpenAI's reported reset
 time. Forecasts are separate evidence, never a reason to change the pacing
 calculation or the stored reset history.
+
+Bar color uses `remaining - target` in percentage points, not a percentage of
+the target. Green means on pace. A surplus blends toward blue (room to use
+more); a deficit blends toward red (spent ahead of pace). The blend reaches
+full blue or red at 20 points and stays capped beyond that. For example,
+95% remaining against a 99% target is only 20% of the way toward red. Hover
+the target to see the unrounded comparison and color meaning. Colors use
+perceptual Oklab interpolation and do not change pacing or observation history.
 
 The extension fetches the public [Codex Reset Monitor](https://codexreset.org/)
 after the dashboard loads, including focus-triggered refreshes. Its tooltip

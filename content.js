@@ -181,6 +181,7 @@
         height: var(--codex-usage-pacer-rail-height) !important;
       }
       .${PROGRESS_CLASS} > div:not(.${OVERLAY_CLASS}):not(:first-child) {
+        background: var(--codex-usage-pacer-fill) !important;
         inset-inline-start: auto !important;
         inset-inline-end: 0 !important;
         left: auto !important;
@@ -2278,7 +2279,9 @@
     progressBar.classList.add(PROGRESS_CLASS);
     progressBar.setAttribute(PROGRESS_ATTR, "true");
     progressBar.style.overflow = "visible";
-    progressBar.style.setProperty("--codex-usage-pacer-fill", remaining >= idealRemaining ? "#22c55e" : "#fb6b70");
+    const fillColor = usagePageCore.pacingColor(remaining, idealRemaining);
+    if (fillColor) progressBar.style.setProperty("--codex-usage-pacer-fill", fillColor);
+    else progressBar.style.removeProperty("--codex-usage-pacer-fill");
     const overlay = document.createElement("div");
     overlay.className = OVERLAY_CLASS;
     overlay.setAttribute(MANAGED_ATTR, "true");
@@ -2316,6 +2319,15 @@
     target.className = TARGET_CLASS;
     target.setAttribute(MANAGED_ATTR, "true");
     target.textContent = `(target ${idealRemaining.toFixed(0)}%)`;
+    if (fillColor) {
+      const deviation = remaining - idealRemaining;
+      setInstantTooltip(target, [
+        `${remaining}% remaining; even pace ${idealRemaining.toFixed(2)}%.`,
+        `${deviation >= 0 ? "+" : ""}${deviation.toFixed(2)} percentage points remaining versus target.`,
+        "Green: on pace. Blue: room to use more. Red: spent ahead of pace.",
+        `Full blue or red at ${usagePageCore.PACING_COLOR_LIMIT} percentage points from target.`,
+      ].join("\n"));
+    }
     remainingRow.appendChild(target);
     if (forecast?.snapshot.announcement) remainingRow.appendChild(buildForecastSourceLink(forecast, true));
     if (forecast) remainingRow.appendChild(buildForecastSourceLink(forecast));

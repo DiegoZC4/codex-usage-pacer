@@ -117,6 +117,9 @@
     const row = card.querySelector(".remaining").getBoundingClientRect();
     const bar = card.querySelector(".rail").getBoundingClientRect();
     check("text does not overlap the usage rail", row.bottom <= bar.top);
+    const fillColor = getComputedStyle(card.querySelector('.fill')).backgroundColor;
+    check("legacy fill uses the pacing gradient rather than native green", fillColor.startsWith('oklab('));
+    check("legacy track remains neutral", getComputedStyle(card.querySelector('.track')).backgroundColor === 'rgb(235, 235, 240)');
     const trackers = [...card.querySelectorAll(".codex-usage-pacer-tracker-links a")];
     const expectedTrackerLinks = [
       ["Codex resets", "https://codexreset.org/"],

@@ -2,6 +2,18 @@
 
 All notable changes to Codex Usage Pacer are documented here.
 
+## [0.13.0] - 2026-10-07
+
+### Changed
+
+- Replace binary green/red pacing with a continuous color scale: green on
+  target, blue for surplus remaining usage, red for spending ahead of pace.
+  Full color is reached at a 20-percentage-point difference in either direction.
+- Use perceptual color interpolation and show the exact pacing comparison and
+  color meaning in the target's instant tooltip.
+- Apply the same colors to native progress bars and legacy dashboard fills.
+  Official targets, forecast behavior, permissions, and saved history are unchanged.
+
 ## [0.12.0] - 2026-10-06
 
 Includes the unreleased 0.9.3 to 0.11.0 work.

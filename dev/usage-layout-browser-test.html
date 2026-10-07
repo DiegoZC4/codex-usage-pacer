@@ -50,6 +50,12 @@
 <script src="../credit-history-core.js"></script>
 <script src="../credit-history-ui.js"></script>
 <script>
+  const RealDate = Date;
+  const NOW = RealDate.parse('2026-10-02T22:54:17Z');
+  window.Date = class extends RealDate {
+    constructor(...args) { super(...(args.length ? args : [NOW])); }
+    static now() { return NOW; }
+  };
   const historyKey = 'codexUsagePacerResetLogV1';
   const now = Date.now();
   let evidenceReady;
@@ -60,7 +66,7 @@
     latestEvidence: {checkedAtMs: now - 60000, limits: [], credits: {count: 94000, countRaw: '94,000', dataSource: 'dom'}},
   }};
   Object.defineProperty(window, 'chrome', {configurable: true, value: {
-    runtime: {id: 'isolated-fixture', getManifest: () => ({version:'0.12.0'}), sendMessage: async () => ({ok:false})},
+    runtime: {id: 'isolated-fixture', getManifest: () => ({version:'0.13.0'}), sendMessage: async () => ({ok:false})},
     storage: {local: {get: async () => structuredClone(storage), set: async v => {
       Object.assign(storage, structuredClone(v));
       if (storage[historyKey].observationChecks?.length) evidenceReady();
@@ -108,6 +114,18 @@
     check('100% uses reported reset, not a new week from now', Math.abs(parseFloat(document.querySelector('.codex-usage-pacer-marker').style.left) - parseFloat(markerBefore)) < 0.01);
     check('rerender never duplicates ticks or graphs', document.querySelectorAll('.codex-usage-pacer-marker').length === 1 && document.querySelectorAll('.codex-usage-pacer-credit-history').length === 1);
     check('rerender does not add a second observation', storage[historyKey].observationChecks.length === 1);
+    const rail = document.querySelector('#weekly .native-rail');
+    check('small surplus blends toward blue', rail.style.getPropertyValue('--codex-usage-pacer-fill') === page.pacingColor(100, 99));
+    document.getElementById('remaining').firstChild.textContent = '95% left';
+    document.querySelector('progress').value = 95;
+    await new Promise(requestAnimationFrame);
+    await new Promise(requestAnimationFrame);
+    const color = rail.style.getPropertyValue('--codex-usage-pacer-fill');
+    check('95% versus 99% is a 20% red blend, not full red', color === page.pacingColor(95, 99));
+    check('browser supports the interpolated fill', CSS.supports('background-color', color));
+    const tooltip = document.querySelector('#weekly .codex-usage-pacer-target').getAttribute('data-codex-usage-pacer-tooltip');
+    check('hover explains the signed difference and 20-point threshold', tooltip.includes('-4.00 percentage points') && tooltip.includes('20 percentage points'));
+    check('color updates keep the original observation history', storage[historyKey].observationChecks.length === 1 && storage[historyKey].usageSamples.at(-1).remainingPercent === 59.25);
     document.body.dataset.complete = 'true';
   })().catch(error => check(error.message, false));
 </script>
